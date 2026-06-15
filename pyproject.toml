@@ -1,0 +1,20 @@
+[build-system]
+requires = [
+    "scikit-build-core>=0.5",
+    "pybind11>=2.10",
+    "setuptools",
+    "wheel"
+]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "PolyStokes"
+version = "0.1.0"
+description = "Python bindings for my PETSc-based C++ simulation"
+authors = [{ name = "Sachit Nagella" }]
+requires-python = ">=3.8"
+
+[tool.scikit-build]
+wheel.packages = []
+cmake.verbose = true
+cmake.define.CMAKE_INSTALL_LIBDIR = "."
