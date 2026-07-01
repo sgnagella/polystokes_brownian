@@ -24,6 +24,10 @@ void PolyStokes::drift(){
     // 1/(2*eps) factor and kT scaling are applied in traj.cpp::step().
     sample_drift_displacement();
 
+    // The RFD probe half-steps below are transient and restored in traj.cpp::step();
+    // they are intentionally NOT wrapped into the periodic box. Periodicity still
+    // enters correctly because check_dist() applies the minimum-image convention.
+
     // Apply positive random displacements (positions only, like traj.cpp)
     for( int i = 0; i < consts.n3; i++){ x[i] += eps * fext[i]; }
     check_dist();

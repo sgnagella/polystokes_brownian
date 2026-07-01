@@ -41,7 +41,17 @@ namespace py = pybind11;
 PYBIND11_MODULE(PolyStokes, m) {
     m.doc() = "Polymer Stokesian Dynamics simulation module";
     py::class_<PolyStokes>(m,"PolyStokes")
-        .def(py::init<double, int, double, std::string, bool, bool, bool, bool, bool, double>(),
+        // Factory lambda so `box` can be None (no PBC) or a 3-element list [Lx,Ly,Lz].
+        .def(py::init([](double dt, int samplerate, double tmax, std::string output_dir,
+                         bool mm_HI, bool chain_HI, bool fene, bool record_forces, bool tether,
+                         py::object box, double t) {
+                 std::vector<double> box_lengths;
+                 if (!box.is_none()) {
+                     box_lengths = box.cast<std::vector<double>>();
+                 }
+                 return new PolyStokes(dt, samplerate, tmax, output_dir, mm_HI, chain_HI,
+                                       fene, record_forces, tether, box_lengths, t);
+             }),
              py::arg("dt"),
              py::arg("samplerate"),
              py::arg("tmax"),
@@ -51,6 +61,7 @@ PYBIND11_MODULE(PolyStokes, m) {
              py::arg("fene")=true,
              py::arg("record_forces")=true,
              py::arg("tether")=false,
+             py::arg("box")=py::none(),
              py::arg("t")=0.0)
         .def("initial_configuration", &PolyStokes::initial_configuration, 
              py::arg("init_x0"), "Initialize the configuration of the particles")
@@ -73,4 +84,26 @@ PYBIND11_MODULE(PolyStokes, m) {
              py::arg("trun"), 
              py::arg("weaken_trap")=-1, "Set the parameters for the traps")
         .def("run", &PolyStokes::run, "Run the simulation");
+
+    // Periodic box utility: same minimum-image / wrapping logic used by the
+    // simulator, exposed so analysis scripts can reuse it consistently.
+    py::class_<Box>(m, "Box")
+        .def(py::init<>())
+        .def("configure", &Box::configure, py::arg("lengths"),
+             "Configure the box: [] disables PBC, [Lx,Ly,Lz] enables an orthorhombic cell")
+        .def("active", &Box::active)
+        .def("minimum_image",
+             [](const Box& b, double dx, double dy, double dz) {
+                 b.minimum_image(dx, dy, dz);
+                 return py::make_tuple(dx, dy, dz);
+             },
+             py::arg("dx"), py::arg("dy"), py::arg("dz"),
+             "Return the minimum-image of a separation vector")
+        .def("wrap",
+             [](const Box& b, double x, double y, double z) {
+                 b.wrap(x, y, z);
+                 return py::make_tuple(x, y, z);
+             },
+             py::arg("x"), py::arg("y"), py::arg("z"),
+             "Return a position wrapped into the primary cell centered at the origin");
 }

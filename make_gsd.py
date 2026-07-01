@@ -25,6 +25,7 @@ def main(beta=1, data_save_dir=None):
     beta = params['beta']
     N_poly = params['N_poly']
     N_mono = params['N_mono']
+    box = params['box'] if params['box'] is not None else [65, 65, 65]
     N_mono_total = N_poly * N_mono
     bond_ids  = np.asarray(params['bond_ids']).T
     
@@ -90,7 +91,9 @@ def main(beta=1, data_save_dir=None):
     # types[:N_mono_total] = ['B'] * N_mono_total # GSD < 2.9.0
     typeids[:N_mono_total] = 1
     
-    L = 65
+    # L = 65
+    L = box[0]
+    print(f"Box size: {L}")
     assert 0.5*L > np.max(np.abs(trajectory)), f"L/2={0.5*L} is smaller than the maximum particle position {np.max(np.abs(trajectory))}"
     
     box_vector = [L, L, L, 0, 0, 0]

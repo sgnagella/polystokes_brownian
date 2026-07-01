@@ -8,10 +8,14 @@ using namespace arrays;
 // Initializes the PolyStokes class and defines various constants and parameters
 // for the calculations
 
-PolyStokes::PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI, bool chain_HI, bool fene, bool record_forces, bool tether, double t)
+PolyStokes::PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI, bool chain_HI, bool fene, bool record_forces, bool tether, const std::vector<double>& box, double t)
     : dt(dt), samplerate(samplerate), tmax(tmax), output_dir(output_dir), mm_HI(mm_HI), chain_HI(chain_HI), fene(fene), record_forces(record_forces), tether(tether), t(t)
-{   
+{
     std::cout << "using bond force fene: " << fene << std::endl;
+    this->box.configure(box);   // empty => no PBC; {Lx,Ly,Lz} => periodic
+    if (this->box.active()) {
+        std::cout << "periodic box: [" << box[0] << ", " << box[1] << ", " << box[2] << "]" << std::endl;
+    }
     timeinfo.t = t;
     timeinfo.dt = dt;
     timeinfo.tmax = tmax;

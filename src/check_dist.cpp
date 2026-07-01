@@ -33,8 +33,9 @@ void PolyStokes::check_dist(){
         // Compute the pairwise distances
         dx = x[k3] - x[j3];
         dy = x[k3+1] - x[j3+1];
-        dz = x[k3+2] - x[j3+2]; 
-        dr = sqrt( dx*dx + dy*dy + dz*dz ); 
+        dz = x[k3+2] - x[j3+2];
+        box.minimum_image(dx, dy, dz);   // nearest image under PBC (no-op if box inactive)
+        dr = sqrt( dx*dx + dy*dy + dz*dz );
 
         type_id = pair_types[ii];
         rverl = rverls[type_id];

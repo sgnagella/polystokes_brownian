@@ -26,30 +26,58 @@ import PolyStokes
 # ----------------------------------------------------------------------------
 # Configuration builders
 # ----------------------------------------------------------------------------
-def build_initial_config(N_dumbbell, r0, colloid_radius=1.0):
-    """Place N_dumbbell dumbbells on a grid in the xy-plane, clear of the
-    central trapped colloid. Returns a (Np, 3) array; the last row is the colloid."""
-    spacing = 1.6                              # inter-dumbbell spacing (>> dumbbell size)
+def build_initial_config(N_dumbbell, r0, colloid_radius=1.0, box=None):
+    """Place N_dumbbell dumbbells on a grid in the xy-plane, clear of the central
+    trapped colloid. When `box=[Lx,Ly,Lz]` is given, every bead is placed strictly
+    inside the periodic cell [-L/2, L/2) so nothing wraps on top of another particle
+    at t=0. Returns a (Np, 3) array; the last row is the colloid."""
     clearance = colloid_radius + 1.5           # keep beads well outside the colloid
-    n_side = 15                                # grid large enough to yield >= N_dumbbell sites
-    offs = (np.arange(n_side) - n_side // 2) * spacing
+    half_bond = 0.5 * r0                        # dumbbell half-extent (oriented along x)
 
-    sites = []
-    for cx in offs:
-        for cy in offs:
-            r = np.hypot(cx, cy)
-            if r >= clearance:
-                sites.append((r, cx, cy))
-    sites.sort()                               # nearest (still-cleared) sites first
-    assert len(sites) >= N_dumbbell, "grid too small for requested dumbbell count"
+    def centered_grid(half_extent, spacing):
+        n = int(np.floor(2.0 * half_extent / spacing)) + 1
+        return (np.arange(n) - (n - 1) / 2.0) * spacing
+
+    def cleared_sites(xmax, ymax, spacing):
+        xs, ys = centered_grid(xmax, spacing), centered_grid(ymax, spacing)
+        s = [(np.hypot(cx, cy), cx, cy) for cx in xs for cy in ys
+             if np.hypot(cx, cy) >= clearance]
+        s.sort()                               # nearest (still-cleared) sites first
+        return s
+
+    if box is not None:
+        # Largest coordinate a dumbbell CENTER may take so its beads stay inside the
+        # box; shrink the grid spacing until enough cleared sites fit.
+        xmax = 0.5 * float(box[0]) - (half_bond + 0.05)
+        ymax = 0.5 * float(box[1]) - (half_bond + 0.05)
+        spacing = 1.6
+        sites = cleared_sites(xmax, ymax, spacing)
+        while len(sites) < N_dumbbell and spacing > 0.3:
+            spacing *= 0.9
+            sites = cleared_sites(xmax, ymax, spacing)
+        assert len(sites) >= N_dumbbell, (
+            f"cannot fit {N_dumbbell} dumbbells clear of the colloid inside box={box}")
+    else:
+        spacing, n_side = 1.6, 15
+        offs = (np.arange(n_side) - n_side // 2) * spacing
+        sites = [(np.hypot(cx, cy), cx, cy) for cx in offs for cy in offs
+                 if np.hypot(cx, cy) >= clearance]
+        sites.sort()
+        assert len(sites) >= N_dumbbell, "grid too small for requested dumbbell count"
+
     sites = sites[:N_dumbbell]
 
     Np = 2 * N_dumbbell + 1
     conf = np.zeros((Np, 3))
     for d, (_, cx, cy) in enumerate(sites):
-        conf[2 * d]     = [cx - 0.5 * r0, cy, 0.0]   # bead 0 of dumbbell d
-        conf[2 * d + 1] = [cx + 0.5 * r0, cy, 0.0]   # bead 1 of dumbbell d
-    conf[-1] = [0.0, 0.0, 0.0]                       # trapped colloid at the origin
+        conf[2 * d]     = [cx - half_bond, cy, 0.0]   # bead 0 of dumbbell d
+        conf[2 * d + 1] = [cx + half_bond, cy, 0.0]   # bead 1 of dumbbell d
+    conf[-1] = [0.0, 0.0, 0.0]                        # trapped colloid at the origin
+
+    if box is not None:
+        half = 0.5 * np.asarray(box, dtype=float)
+        assert np.all(np.abs(conf) <= half + 1e-9), \
+            "initial configuration falls outside the box"
     return conf
 
 
@@ -93,7 +121,16 @@ def equilibrium_length_stats(kbond, r0, kT):
     return mean, mode, std
 
 
-def bond_statistics(times, traj, N_dumbbell, kbond=1.0, r0=0.2, kT=1.0):
+def minimum_image(vec, box):
+    """Minimum-image an array of separation vectors under an orthorhombic box.
+    `box` is [Lx,Ly,Lz] (or None for no PBC). Matches the C++ Box convention."""
+    if box is None:
+        return vec
+    L = np.asarray(box, dtype=float)
+    return vec - L * np.round(vec / L)
+
+
+def bond_statistics(times, traj, N_dumbbell, kbond=1.0, r0=0.2, kT=1.0, box=None):
     """Statistics on the bond displacements for a purely thermal, undriven system.
 
     The convention-free 'zero on average' quantities are the mean bond VECTOR and
@@ -101,6 +138,9 @@ def bond_statistics(times, traj, N_dumbbell, kbond=1.0, r0=0.2, kT=1.0):
     with b_i = x_{2i+1} - x_{2i}: both vanish at equilibrium (isotropy + no drift).
     The scalar length carries the r^2 shell factor, so its mean sits at/above r0;
     we compare it against the theoretical equilibrium rather than assuming r0.
+
+    Under PBC the output positions are wrapped, so bond vectors are taken to the
+    minimum image (a bond straddling a boundary then has a physical, not ~L, length).
     """
     n_frames = traj.shape[0]
     if n_frames < 2:
@@ -110,7 +150,7 @@ def bond_statistics(times, traj, N_dumbbell, kbond=1.0, r0=0.2, kT=1.0):
 
     b0 = traj[:, 0:2 * N_dumbbell:2, :]        # (frames, N_dumbbell, 3) bead 0 of each dumbbell
     b1 = traj[:, 1:2 * N_dumbbell:2, :]        # (frames, N_dumbbell, 3) bead 1 of each dumbbell
-    bond_vec = b1 - b0                          # bond vectors
+    bond_vec = minimum_image(b1 - b0, box)     # bond vectors (nearest image under PBC)
     bond_len = np.linalg.norm(bond_vec, axis=-1)
 
     dvec = np.diff(bond_vec, axis=0).reshape(-1, 3)   # bond-vector increments, pooled
@@ -159,7 +199,7 @@ def bond_statistics(times, traj, N_dumbbell, kbond=1.0, r0=0.2, kT=1.0):
 # ----------------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------------
-def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True):
+def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
     if samplerate is None:
         samplerate = int(1 / dt)               # sample every 1/dt timesteps
 
@@ -176,9 +216,9 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True):
     tau = 1000
     kT = 1.0
     epsilon = 1.0                              # WCA excluded-volume energy scale
-    ktrap = 500                                # holds the colloid at the origin
+    ktrap = 0; 500                                # holds the colloid at the origin
 
-    conf = build_initial_config(N_dumbbell, r0)
+    conf = build_initial_config(N_dumbbell, r0, box=box)
     bond_ids = build_bond_ids(N_dumbbell)
 
     data_save_dir = f'data/dumbbells_thermal_beta_{beta}'
@@ -192,6 +232,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True):
             "Np": Np, "beta": beta, "N_trapped": N_trapped,
             "N_poly": N_dumbbell, "N_mono": N_mono,
             "N_mono_total": N_mono_total, "bond_ids": bond_ids,
+            "box": box,
         }
         with open(os.path.join(data_save_dir, 'params.pkl'), 'wb') as f:
             pickle.dump(params, f)
@@ -203,6 +244,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True):
             fene=False,        # harmonic bonds
             record_forces=False,
             tether=False,      # free dumbbells (NOT tethered to the colloid)
+            box=box,           # None => unbounded; [Lx,Ly,Lz] => periodic
         )
         sim.particle_info(
             kT, epsilon, Np, N_trapped, N_mono_total,
@@ -214,10 +256,10 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True):
 
     # Analyze bond displacements
     times, traj = read_trajectory(data_config_dir)
-    bond_statistics(times, traj, N_dumbbell, kbond=kbond, r0=r0, kT=kT)
+    bond_statistics(times, traj, N_dumbbell, kbond=kbond, r0=r0, kT=kT, box=box)
 
 
 if __name__ == "__main__":
-    dt = 1e-3
-    samplerate = 1
-    main(dt=dt, samplerate=samplerate, tmax=1.0)
+    dt = 0.0005
+    samplerate = 2
+    main(dt=dt, samplerate=samplerate, tmax=0.5, box=[8,8,8])

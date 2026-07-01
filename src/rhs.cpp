@@ -41,7 +41,7 @@ void moving_trap(Consts& consts, Coeffs& coeffs, TrapInfo& trapinfo, double& t){
     return; 
 }
 
-void trapping_forces(PetscScalar fext[], Consts& consts, Coeffs& coeffs, ParticleInfo& pinfo, TrapInfo& trapinfo, double& t){
+void trapping_forces(PetscScalar fext[], Consts& consts, Coeffs& coeffs, ParticleInfo& pinfo, TrapInfo& trapinfo, double& t, const Box& box){
     PetscInt i, j, i3, ic3;
     // Compute the trapping forces on the particles at time t.
     // Static trap: xpos0 already holds each colloid's initial position (stored in
@@ -72,9 +72,15 @@ void trapping_forces(PetscScalar fext[], Consts& consts, Coeffs& coeffs, Particl
         // fext[ic3+1] = ktrap * ( x[i3+1] - xpos0[ic3+1] );
         // fext[ic3+2] = ktrap * ( x[i3+2] - xpos0[ic3+2] );
 
-        fext[i3] += ktrap * ( x[i3] - xpos0[ic3] );
-        fext[i3+1] += ktrap * ( x[i3+1] - xpos0[ic3+1] );
-        fext[i3+2] += ktrap * ( x[i3+2] - xpos0[ic3+2] );
+        // Displacement from the trap center, taken to the nearest image so a
+        // colloid wrapped across a periodic boundary is not yanked across the box.
+        double dx = x[i3]   - xpos0[ic3];
+        double dy = x[i3+1] - xpos0[ic3+1];
+        double dz = x[i3+2] - xpos0[ic3+2];
+        box.minimum_image(dx, dy, dz);   // no-op if box inactive
+        fext[i3]   += ktrap * dx;
+        fext[i3+1] += ktrap * dy;
+        fext[i3+2] += ktrap * dz;
 
         // std::cout << "Trapping forces: " << fext[i3] << " " << fext[i3+1] << " " << fext[i3+2] << std::endl;
 
@@ -108,7 +114,7 @@ void fene_bond(PetscScalar *r, PetscScalar *f, Consts& consts, ParticleInfo& pin
     return;
 }
 
-void bond_forces(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, bool fene){
+void bond_forces(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, bool fene, const Box& box){
     int ii, jj, kk, ll, k3, j3; 
     PetscScalar f[consts.ndimp], r[consts.ndimp+1];
 
@@ -122,7 +128,8 @@ void bond_forces(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, bool f
         r[0] = x[k3] - x[j3];
         r[1] = x[k3 + 1] - x[j3 + 1];
         r[2] = x[k3 + 2] - x[j3 + 2];
-        
+        box.minimum_image(r[0], r[1], r[2]);   // bond across a periodic boundary stays intact (no-op if inactive)
+
         r[3] = sqrt( r[0]*r[0] + r[1]*r[1] + r[2]*r[2] );
 
         if(fene){
@@ -174,8 +181,8 @@ void PolyStokes::RHS(bool drift){
     std::fill(fint, fint + nm3nc3, 0.0);
     
     pair_interaction(fint, consts, pinfo, dataStruct);
-    trapping_forces(fint, consts, coeffs, pinfo, trapinfo, timeinfo.t);
-    bond_forces(fint, consts, pinfo, fene);
+    trapping_forces(fint, consts, coeffs, pinfo, trapinfo, timeinfo.t, box);
+    bond_forces(fint, consts, pinfo, fene, box);
 
     // Print fint
     // std::cout << "fint: " << std::endl;

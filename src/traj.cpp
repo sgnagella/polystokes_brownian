@@ -24,6 +24,13 @@ void PolyStokes::step(){
     for( int i = 0; i < consts.n3; i++){
         x[i] += up[i]*timeinfo.dt;
     }
+
+    // Confine particles to the periodic cell (no-op if box inactive).
+    if( box.active() ){
+        for( int k3 = 0; k3 < consts.n3; k3 += consts.ndimp ){
+            box.wrap(x[k3], x[k3+1], x[k3+2]);
+        }
+    }
     return;
 }
 

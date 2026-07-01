@@ -4,12 +4,14 @@ Overlay the theoretical equilibrium bond-length distribution
 on the measured histogram from the purely-thermal dumbbell run.
 """
 
+import os
+import pickle
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from test_sim_dumbbells_thermal import read_trajectory, equilibrium_length_stats
+from test_sim_dumbbells_thermal import read_trajectory, equilibrium_length_stats, minimum_image
 
 # --- parameters used in the simulation (test_sim_dumbbells_thermal.main defaults) ---
 beta = 0.1
@@ -21,9 +23,19 @@ config_dir = f"data/dumbbells_thermal_beta_{beta}/config"
 trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))  # NumPy 2.0 renamed trapz
 
 
+def _load_box():
+    """Read the periodic box (if any) saved by the simulation run."""
+    ppath = f"data/dumbbells_thermal_beta_{beta}/params.pkl"
+    if os.path.exists(ppath):
+        with open(ppath, "rb") as f:
+            return pickle.load(f).get("box", None)
+    return None
+
+
 def measured_bond_lengths(drop_transient=True):
     times, traj = read_trajectory(config_dir)
     b = traj[:, 1:2 * N_dumbbell:2, :] - traj[:, 0:2 * N_dumbbell:2, :]
+    b = minimum_image(b, _load_box())              # nearest image under PBC (no-op if unbounded)
     L = np.linalg.norm(b, axis=-1)                 # (frames, N_dumbbell)
     if drop_transient:                             # first frame ~ t=0 is pre-equilibrium
         L = L[times >= 0.5]
