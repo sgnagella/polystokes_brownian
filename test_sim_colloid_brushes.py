@@ -43,6 +43,7 @@ def main(beta=1, check_conf=False):
     tstart = 0
     trun = 5.0
     kT = 1.0
+    epsilon = 1.0   # WCA excluded-volume energy scale
     tmax = 5.0
 
     # ---- Geometry: two brush-coated colloids on the x-axis ----
@@ -133,10 +134,12 @@ def main(beta=1, check_conf=False):
 
     # ---- Run the simulation ----
     sim = PolyStokes.PolyStokes(dt, samplerate, tmax, data_config_dir,
-                                mm_HI=False, chain_HI=True, fene=False, record_forces=True)
+                                mm_HI=False, chain_HI=True, fene=False, record_forces=True,
+                                tether=True)
 
     sim.particle_info(
         kT,
+        epsilon,
         Np,
         N_trapped,
         N_mono_total,

@@ -41,8 +41,8 @@ namespace py = pybind11;
 PYBIND11_MODULE(PolyStokes, m) {
     m.doc() = "Polymer Stokesian Dynamics simulation module";
     py::class_<PolyStokes>(m,"PolyStokes")
-        .def(py::init<double, int, double, std::string, bool, bool, bool, bool, double>(),
-             py::arg("dt"), 
+        .def(py::init<double, int, double, std::string, bool, bool, bool, bool, bool, double>(),
+             py::arg("dt"),
              py::arg("samplerate"),
              py::arg("tmax"),
              py::arg("output_dir"),
@@ -50,12 +50,14 @@ PYBIND11_MODULE(PolyStokes, m) {
              py::arg("chain_HI")=false,
              py::arg("fene")=true,
              py::arg("record_forces")=true,
+             py::arg("tether")=false,
              py::arg("t")=0.0)
         .def("initial_configuration", &PolyStokes::initial_configuration, 
              py::arg("init_x0"), "Initialize the configuration of the particles")
         .def("particle_info", &PolyStokes::particle_info,
-             py::arg("kT"), 
-             py::arg("Np"), 
+             py::arg("kT"),
+             py::arg("epsilon"),
+             py::arg("Np"),
              py::arg("Nc"), 
              py::arg("Nm"), 
              py::arg("Npoly"), 

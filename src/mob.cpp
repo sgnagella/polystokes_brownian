@@ -912,28 +912,28 @@ void PolyStokes::mob(){
     // View the matrix
     // MatView(M, PETSC_VIEWER_STDOUT_SELF);
 
-    // Check for symmetry
-    PetscReal tol = 1e-10;
-    PetscBool isSymmetric;
-    ierr = MatIsSymmetric(M, tol, &isSymmetric); CHKERRV(ierr);
+    // // Check for symmetry
+    // PetscReal tol = 1e-10;
+    // PetscBool isSymmetric;
+    // ierr = MatIsSymmetric(M, tol, &isSymmetric); CHKERRV(ierr);
 
-    // Print result
-    if (isSymmetric == PETSC_TRUE) {
-        PetscPrintf(PETSC_COMM_WORLD, "The matrix M is symmetric.\n");
-    } else {
-        PetscPrintf(PETSC_COMM_WORLD, "The matrix M is not symmetric.\n");
-    }
+    // // Print result
+    // if (isSymmetric == PETSC_TRUE) {
+    //     PetscPrintf(PETSC_COMM_WORLD, "The matrix M is symmetric.\n");
+    // } else {
+    //     PetscPrintf(PETSC_COMM_WORLD, "The matrix M is not symmetric.\n");
+    // }
 
     // Save matrix to file
 
-    if( timeinfo.t ){
-        PetscViewer viewer;
-        PetscViewerASCIIOpen(PETSC_COMM_WORLD, "mob.csv", &viewer);
-        PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_DENSE); // Forces dense output
-        MatView(M, viewer);
-        PetscViewerPopFormat(viewer);
-        PetscViewerDestroy(&viewer);
-    }
+    // if( timeinfo.t ){
+    //     PetscViewer viewer;
+    //     PetscViewerASCIIOpen(PETSC_COMM_WORLD, "mob.csv", &viewer);
+    //     PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_DENSE); // Forces dense output
+    //     MatView(M, viewer);
+    //     PetscViewerPopFormat(viewer);
+    //     PetscViewerDestroy(&viewer);
+    // }
 
     return;
 }

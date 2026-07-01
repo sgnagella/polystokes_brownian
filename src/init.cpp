@@ -149,7 +149,7 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts){
     return;
 }
 
-void set_vars(ParticleInfo& pinfo, Data& dataStruct, Consts& consts){
+void set_vars(ParticleInfo& pinfo, Data& dataStruct, Consts& consts, bool tether){
     // Define other useful variables for the calculations
     int ii, jj, kk, kk_AA, kk_AB, pidx; 
 
@@ -244,14 +244,17 @@ void set_vars(ParticleInfo& pinfo, Data& dataStruct, Consts& consts){
     }
 
     // Tether each chain's inner-end monomer to its host colloid (colloidal brush).
+    // Only when tethering is enabled; otherwise monomers are free (test_sim.py).
     // Chains are split evenly across the Nc colloids (colloid indices are Nm..Np-1).
-    int chains_per_colloid = Npoly / Nc;
-    for( ii = 0; ii < Npoly; ii++ ){
-        int host = Nm + ( ii / chains_per_colloid );
-        if( host >= Np ){ host = Np - 1; }   // guard if Npoly not divisible by Nc
-        bond_ids[0][kk] = ii * Nmono_per_chain;   // inner-end monomer of chain ii
-        bond_ids[1][kk] = host;                    // host colloid
-        kk += 1;
+    if( tether ){
+        int chains_per_colloid = Npoly / Nc;
+        for( ii = 0; ii < Npoly; ii++ ){
+            int host = Nm + ( ii / chains_per_colloid );
+            if( host >= Np ){ host = Np - 1; }   // guard if Npoly not divisible by Nc
+            bond_ids[0][kk] = ii * Nmono_per_chain;   // inner-end monomer of chain ii
+            bond_ids[1][kk] = host;                    // host colloid
+            kk += 1;
+        }
     }
 
     if( kk != nbonds){
@@ -318,7 +321,7 @@ void PolyStokes::init(){
     alok_arrays(pinfo, consts);
 
     std::cout << "Setting vars..." << std::endl;
-    set_vars(pinfo, dataStruct, consts);
+    set_vars(pinfo, dataStruct, consts, tether);
 
     std::cout << "Initializing the solver..." << std::endl;
     init_solver();

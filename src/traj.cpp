@@ -10,9 +10,13 @@ void PolyStokes::step(){
     // Time-advance the particle positions
 
     if(pinfo.kT >0){
+        // Thermal drift kT*div(M)*dt from the RFD estimate in drift(). The two mobility
+        // probes are separated by 2*rfd_eps, so div(M) ~ udiff/(2*rfd_eps); the drift
+        // displacement is therefore (kT/(2*rfd_eps)) * udiff * dt.
+        double drift_scale = pinfo.kT / (2.0 * consts.rfd_eps);
         for (int i = 0; i < consts.n3; i++){
-            x[i] += 0.001 * fext[i]; // undo drift displacement from previous step
-            x[i] += 1000.0*udiff[i]*timeinfo.dt; // multiplied by inverse delta to ensure correct scaling of the drift contribution to the particle displacements
+            x[i] += consts.rfd_eps * fext[i]; // undo RFD probe: drift() left positions at x - rfd_eps*W
+            x[i] += drift_scale * udiff[i] * timeinfo.dt;
         }
     }
 

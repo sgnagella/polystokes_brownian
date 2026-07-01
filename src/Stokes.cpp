@@ -8,8 +8,8 @@ using namespace arrays;
 // Initializes the PolyStokes class and defines various constants and parameters
 // for the calculations
 
-PolyStokes::PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI, bool chain_HI, bool fene, bool record_forces, double t)
-    : dt(dt), samplerate(samplerate), tmax(tmax), output_dir(output_dir), mm_HI(mm_HI), chain_HI(chain_HI), fene(fene), record_forces(record_forces), t(t)
+PolyStokes::PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI, bool chain_HI, bool fene, bool record_forces, bool tether, double t)
+    : dt(dt), samplerate(samplerate), tmax(tmax), output_dir(output_dir), mm_HI(mm_HI), chain_HI(chain_HI), fene(fene), record_forces(record_forces), tether(tether), t(t)
 {   
     std::cout << "using bond force fene: " << fene << std::endl;
     timeinfo.t = t;
@@ -79,6 +79,7 @@ void PolyStokes::set_consts(){
     consts.id_rows = 2;
     consts.pd_rows = 8;
     consts.PetscScalarSize = consts.nm3nc6 * sizeof(PetscScalar);
+    consts.rfd_eps = 1.0e-3;   // RFD probe half-step (drift() perturbs positions by +/- rfd_eps * W)
 
     int& ndim = consts.ndim;
     int& const5 = consts.const5;
@@ -151,9 +152,10 @@ void PolyStokes::set_consts(){
 
 }
 
-void PolyStokes::particle_info(double kT, int Np, int Nc, int Nm, int Npoly, int Nmono_per_chain, double beta, double kbond, double r0, double Lmax, double tau)
+void PolyStokes::particle_info(double kT, double epsilon, int Np, int Nc, int Nm, int Npoly, int Nmono_per_chain, double beta, double kbond, double r0, double Lmax, double tau)
 {
     pinfo.kT = kT;
+    pinfo.epsilon = epsilon;
     pinfo.Np = Np;
     pinfo.Nc = Nc;
     pinfo.Nm = Nm;
@@ -167,6 +169,7 @@ void PolyStokes::particle_info(double kT, int Np, int Nc, int Nm, int Npoly, int
 
     // Print the input parameters
     std::cout << "kT: " << pinfo.kT << std::endl;
+    std::cout << "epsilon: " << pinfo.epsilon << std::endl;
     std::cout << "Np: " << pinfo.Np << std::endl;
     std::cout << "Nc: " << pinfo.Nc << std::endl;
     std::cout << "Nm: " << pinfo.Nm << std::endl;
@@ -184,8 +187,8 @@ void PolyStokes::particle_info(double kT, int Np, int Nc, int Nm, int Npoly, int
     pinfo.npair_BB = Nc * (Nc-1) / 2;
     pinfo.npair_AB = pinfo.npair - pinfo.npair_AA - pinfo.npair_BB;
     pinfo.nbonds_per_poly = Nmono_per_chain - 1;
-    // linear intra-chain bonds, plus one tether per chain (chain end -> host colloid)
-    pinfo.nbonds = pinfo.nbonds_per_poly * Npoly + Npoly;
+    // linear intra-chain bonds, plus (if tethering) one tether per chain (chain end -> host colloid)
+    pinfo.nbonds = pinfo.nbonds_per_poly * Npoly + (tether ? Npoly : 0);
 
     pinfo.beta_inv = 1.0 / beta;
     pinfo.beta2 = beta * beta;

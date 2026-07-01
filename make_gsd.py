@@ -3,9 +3,10 @@ import numpy as np
 import pickle
 import gsd.hoomd
 
-def main(beta=1):
+def main(beta=1, data_save_dir=None):
     
-    data_save_dir = f'data/beta_{beta}'
+    if data_save_dir is None:
+        data_save_dir = f'data/beta_{beta}'
     with open(os.path.join(data_save_dir, 'params.pkl'), 'rb') as f:
         params = pickle.load(f)
 
@@ -114,4 +115,5 @@ def main(beta=1):
 
 if __name__ == '__main__':
     beta = 0.1
-    main(beta=beta)
+    data_save_dir = f'data/dumbbells_thermal_beta_{beta}'
+    main(beta=beta, data_save_dir=data_save_dir)

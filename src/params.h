@@ -6,6 +6,7 @@
 // Define struct containing polymer parameters
 struct ParticleInfo{
     double kT;
+    double epsilon;   // WCA (excluded-volume) energy parameter
     int Np;
     int Nmono_per_chain;
     int Nc;
@@ -58,6 +59,7 @@ struct Consts{
     PetscInt nm3nc11;
     PetscInt nm6nc17;
     std::size_t PetscScalarSize;
+    double rfd_eps;   // RFD probe half-step; full finite-difference separation is 2*rfd_eps
 };
 
 struct TrapInfo{

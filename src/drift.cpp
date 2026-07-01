@@ -16,11 +16,16 @@ void PolyStokes::sample_drift_displacement(){
 
 void PolyStokes::drift(){
     int& nm3nc6 = consts.nm3nc6;
-    // This routine computes the drift term in the Brownian dynamics update
+    double& eps = consts.rfd_eps;   // RFD probe half-step; central-difference separation is 2*eps
+    // This routine estimates the thermal drift kT*div(M) via a Random Finite
+    // Difference (RFD): it probes the mobility at x +/- eps*W with a random W and
+    // forms the difference udiff = M(x-eps*W)W - M(x+eps*W)W. Because the two probe
+    // points are separated by 2*eps, the divergence estimate is udiff/(2*eps); the
+    // 1/(2*eps) factor and kT scaling are applied in traj.cpp::step().
     sample_drift_displacement();
 
     // Apply positive random displacements (positions only, like traj.cpp)
-    for( int i = 0; i < consts.n3; i++){ x[i] += 0.001 * fext[i]; }
+    for( int i = 0; i < consts.n3; i++){ x[i] += eps * fext[i]; }
     check_dist();
     mob();
     RHS(true);
@@ -33,8 +38,8 @@ void PolyStokes::drift(){
     memcpy(arrays::drift.data(), &X_array[consts.nm3nc11], consts.PetscScalarSize);
     VecRestoreArrayRead(Xd, &X_array);
 
-    // Apply negative random displacements (positions only, like traj.cpp)
-    for( int i = 0; i < consts.n3; i++){ x[i] -= 0.002 * fext[i]; }
+    // Move to the opposite probe point x - eps*W (net -2*eps*W from x + eps*W)
+    for( int i = 0; i < consts.n3; i++){ x[i] -= 2.0 * eps * fext[i]; }
     check_dist();
     mob();
     RHS(true);
