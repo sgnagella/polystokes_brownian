@@ -62,12 +62,14 @@ namespace arrays{
     // Mat ZMUS;
     // Mat ZMES;
     // Mat Pinv;
-    // Mat M;
+    Mat M;
     Mat B;
     Mat A;
 
     Vec X;
+    Vec Xd;
     Vec rhs;
+    Vec W;
 
     // Array for temporarily storing the contents of rfu without rotation terms
     rank2_array rtfu;
@@ -359,6 +361,12 @@ namespace arrays{
         // VecZeroEntries(rhs);
     }
 
+    void initialize_W(PetscInt nm3nc11){
+        VecCreate(PETSC_COMM_WORLD, &W);
+        VecSetSizes(W, PETSC_DECIDE, nm3nc11); 
+        VecSetFromOptions(W);
+        
+    }
     void initialize_X(PetscInt nm6nc17){
         PetscErrorCode ierr;
         VecCreate(PETSC_COMM_WORLD, &X);
@@ -367,5 +375,15 @@ namespace arrays{
         VecSet(X, 0.0);
         ierr = VecAssemblyBegin(X); CHKERRV(ierr);
         ierr = VecAssemblyEnd(X); CHKERRV(ierr);
+    }
+
+    void initialize_Xd(PetscInt nm6nc17){
+        PetscErrorCode ierr;
+        VecCreate(PETSC_COMM_WORLD, &Xd);
+        VecSetSizes(Xd, PETSC_DECIDE, nm6nc17);
+        VecSetFromOptions(Xd);
+        VecSet(Xd, 0.0);
+        ierr = VecAssemblyBegin(Xd); CHKERRV(ierr);
+        ierr = VecAssemblyEnd(Xd); CHKERRV(ierr);
     }
 };

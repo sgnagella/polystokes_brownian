@@ -42,10 +42,12 @@ void PolyStokes::signal_handler(int signum) {
     if (sim_ptr) {
         sim_ptr->cleanup();  // Call cleanup function
     }
-    PetscFinalize();  // Ensure PETSc finalization
+    SlepcFinalize();  // Ensure SLEPc/PETSc finalization
     exit(signum);
 }
 
+// TODO: re use last solution as initial guess for the drift calcs
+// Output the hydrodynamic forces on the colloids
 void PolyStokes::run(){
     sim_ptr = this; 
 
@@ -87,8 +89,22 @@ void PolyStokes::run(){
         // Add lubrication
         // add_lub();
 
-        // Get new particle velocities 
-        new_vel();
+        // Compute the brownian drift 
+        if (pinfo.kT > 0){
+            // std::cout << "Computing Brownian slip velocities..." << std::endl;
+            solve_slip_vel();
+            
+            // Get new particle velocities 
+            new_vel();
+
+            // std::cout << "Computing Brownian drift..." << std::endl;
+            drift();
+
+        }
+        else{
+            // Get new particle velocities 
+            new_vel();
+        }
         
         // std::cout << "\n" << std::endl;
 
@@ -113,6 +129,9 @@ void PolyStokes::run(){
         }
         // std::cout << "\n" << std::endl;
     }
+
+    // [profiling] dump the PETSc/SLEPc -log_view summary without finalizing
+    // PetscLogView(PETSC_VIEWER_STDOUT_WORLD);
 
     sim_ptr = nullptr;
 

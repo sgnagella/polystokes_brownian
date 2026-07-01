@@ -4,9 +4,11 @@
 #include "Stokes.h"
 using namespace arrays;
 
-void PolyStokes::solve_saddle(){
+void PolyStokes::solve_saddle(Vec X_out, bool warm_start){
     // This routine solves the saddle point system
-    // using a Krylov subspace method
+    // using a Krylov subspace method.
+    // warm_start: if true, use the current contents of X_out as the initial
+    // guess; if false, KSP zeroes X_out and starts cold.
 
     // Declare the KSP solver
     PetscErrorCode ierr;
@@ -30,7 +32,8 @@ void PolyStokes::solve_saddle(){
     // }
     // VecRestoreArray(rhs, &rhs_array);
 
-    ierr = KSPSolve(ksp, rhs, X); CHKERRV(ierr);
+    ierr = KSPSetInitialGuessNonzero(ksp, warm_start ? PETSC_TRUE : PETSC_FALSE); CHKERRV(ierr);
+    ierr = KSPSolve(ksp, rhs, X_out); CHKERRV(ierr);
     ierr = KSPGetConvergedReason(ksp, &reason); CHKERRV(ierr);
 
     if (reason < 0) {
@@ -61,7 +64,7 @@ void PolyStokes::new_vel(){
     // by solving the saddle point system
 
     PetscInt i, ishift;
-    solve_saddle();
+    solve_saddle(X, false);  // deterministic solve: cold start
 
     // Get the translational and rotational 
     // velocities from the solution vector 

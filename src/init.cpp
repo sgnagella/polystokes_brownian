@@ -76,8 +76,32 @@ void PolyStokes::init_solver(){
 
     std::cout << "Set operators" << std::endl;
     ierr = KSPSetFromOptions(ksp); CHKERRV(ierr);
+    // Initial-guess (warm vs cold) is now set per-solve in solve_saddle().
     KSPSetTolerances(ksp, 1e-6, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
 
+    return;
+}
+
+void PolyStokes::init_square_root_solver(){
+    PetscErrorCode ierr;
+    // Define function f(x) = sqrt(x)
+    ierr = FNCreate(PETSC_COMM_WORLD, &f); CHKERRV(ierr);
+    ierr = FNSetType(f, FNSQRT); CHKERRV(ierr);
+
+    // Create the MFN Solver
+    ierr = MFNCreate(PETSC_COMM_WORLD, &mfn); CHKERRV(ierr);
+    ierr = MFNSetOperator(mfn, M); CHKERRV(ierr);
+    ierr = MFNSetFN(mfn, f); CHKERRV(ierr);
+    ierr = MFNSetFromOptions(mfn); CHKERRV(ierr);
+    ierr = MFNSetUp(mfn); CHKERRV(ierr);
+
+    return;
+}
+
+void PolyStokes::init_random(unsigned int seed){
+    // Initialize random number generator with a seed
+    rng.seed(seed);
+    normal_dist = std::normal_distribution<double>(0.0, 1.0);
     return;
 }
 
@@ -89,7 +113,10 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts){
     initialize_radii( pinfo.Np );
     initialize_x0( consts.nm3nc3 ); 
     initialize_up( consts.nm3nc6 );
+    initialize_udiff( consts.nm3nc6 );
     initialize_fext( consts.nm3nc6 );
+    initialize_drift( consts.nm3nc6 );  
+    initialize_fb( consts.nm3nc11 );
     // initialize_q( consts.nc4 );
     
     std::cout << "Bookeeping arrays..." << std::endl;
@@ -106,6 +133,7 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts){
     initialize_mesid( consts.id_rows, consts.const5);
 
     std::cout << "PETSC arrays ..." << std::endl;
+    initialize_M(consts.nm3nc11);
     initialize_B(consts.nm3nc11, consts.nm3nc6);
     std::cout << "A" << std::endl;
     initialize_A(consts.nm6nc17, consts.nm3nc11, consts.nm3nc6);
@@ -113,6 +141,10 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts){
     initialize_rhs(consts.nm6nc17);
     std::cout << "X" << std::endl;
     initialize_X(consts.nm6nc17);
+    std::cout << "W" << std::endl;
+    initialize_W(consts.nm3nc11);
+    std::cout << "Xd" << std::endl;
+    initialize_Xd(consts.nm6nc17);
 
     return;
 }
@@ -205,10 +237,21 @@ void set_vars(ParticleInfo& pinfo, Data& dataStruct, Consts& consts){
     for( ii = 0; ii < Npoly; ii++ ){
         for( jj = 0; jj < nbonds_per_poly; jj++ ){
             pidx = ii * Nmono_per_chain + jj; 
-            bond_ids[0][kk] = pidx; 
+            bond_ids[0][kk] = pidx;
             bond_ids[1][kk] = pidx + 1;
-            kk += 1; 
+            kk += 1;
         }
+    }
+
+    // Tether each chain's inner-end monomer to its host colloid (colloidal brush).
+    // Chains are split evenly across the Nc colloids (colloid indices are Nm..Np-1).
+    int chains_per_colloid = Npoly / Nc;
+    for( ii = 0; ii < Npoly; ii++ ){
+        int host = Nm + ( ii / chains_per_colloid );
+        if( host >= Np ){ host = Np - 1; }   // guard if Npoly not divisible by Nc
+        bond_ids[0][kk] = ii * Nmono_per_chain;   // inner-end monomer of chain ii
+        bond_ids[1][kk] = host;                    // host colloid
+        kk += 1;
     }
 
     if( kk != nbonds){
@@ -265,7 +308,7 @@ void set_vars(ParticleInfo& pinfo, Data& dataStruct, Consts& consts){
 
 void PolyStokes::init(){
     std::cout << "Initializing the program..." << std::endl;
-    PetscInitialize(NULL, NULL, NULL, NULL);
+    SlepcInitialize(NULL, NULL, NULL, NULL);
     PetscPushErrorHandler(PetscAbortErrorHandler, NULL);
 
     KSP ksp;
@@ -279,6 +322,13 @@ void PolyStokes::init(){
 
     std::cout << "Initializing the solver..." << std::endl;
     init_solver();
+
+    if(pinfo.kT > 0){
+        std::cout << "Initializing random number generator..." << std::endl;
+        init_random(12345); // TODO: make seed an input parameter
+        std::cout << "Initializing square-root (MFN) solver..." << std::endl;
+        init_square_root_solver();
+    }
     
 }
 

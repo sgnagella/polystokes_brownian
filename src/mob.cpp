@@ -399,7 +399,7 @@ void PolyStokes::fill_self(){
         for( ii = 0; ii < ndim; ii++){
             VALA = beta_inv * (PetscScalar)mob_a[ii][ii]; 
             IDX1 = ph1 + ii; 
-            ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+            ierr = MatSetValues(M, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
         }
     }
 
@@ -411,21 +411,21 @@ void PolyStokes::fill_self(){
         ph3 = nm3nc6 + const5 * (kk-Nm);     // Stress modes
 
         for( ii = 0; ii < ndim; ii++){
-            VALA = (PetscScalar)mob_a[ii][ii]; 
-            IDX1 = ph1 + ii; 
-            ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+            VALA = (PetscScalar)mob_a[ii][ii];
+            IDX1 = ph1 + ii;
+            ierr = MatSetValues(M, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
-            VALA = (PetscScalar)mob_c[ii][ii]; 
-            IDX1 = ph2 + ii; 
-            ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+            VALA = (PetscScalar)mob_c[ii][ii];
+            IDX1 = ph2 + ii;
+            ierr = MatSetValues(M, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
         }
 
         for( ii = 0; ii < const5; ii++ ){
             for( jj = 0; jj < const5; jj++ ){
-                VALA = (PetscScalar)mob_m[ii][jj]; 
-                IDX1 = ph3 + ii; 
-                IDX2 = ph3 + jj; 
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                VALA = (PetscScalar)mob_m[ii][jj];
+                IDX1 = ph3 + ii;
+                IDX2 = ph3 + jj;
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
             }
         }
 
@@ -678,13 +678,13 @@ void PolyStokes::mob(){
                     IDX2 = ph2 + jj;
                     VALA = (PetscScalar)mob_a[ii][jj];
                     // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_a VALA " << VALA << std::endl;
-                    ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
-    
-                    IDX1 = ph2 + ii; 
+                    ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+
+                    IDX1 = ph2 + ii;
                     IDX2 = ph1 + jj;
                     VALA = (PetscScalar)mob_a[jj][ii];
                     // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_a VALA " << VALA << std::endl;
-                    ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                    ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
                 }
             }
         }
@@ -724,20 +724,20 @@ void PolyStokes::mob(){
                 IDX2 = ph2 + jj;
                 VALA = (PetscScalar)mob_a[ii][jj];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_a VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
                 
                 IDX1 = ph4 + ii;
                 IDX2 = ph1 + jj;
                 VALA = (PetscScalar)mob_b[ii][jj]; 
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_b VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 IDX1 = ph1 + ii; 
                 IDX2 = ph4 + jj;
                 // std::cout<< "in AB_MC IDX2 " << IDX2 << std::endl;
                 VALA = (PetscScalar)mob_bt[ii][jj];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_bt VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 // Symmetric contributions
                 // Only have force-velocity coupling
@@ -746,7 +746,7 @@ void PolyStokes::mob(){
                 IDX2 = ph1 + jj;
                 VALA = (PetscScalar)mob_a[jj][ii];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_a VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
             }
 
             // velocity-stress couplings
@@ -756,8 +756,8 @@ void PolyStokes::mob(){
                 VALA = (PetscScalar)mob_gt[ii][jj];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_gt VALA " << VALA << std::endl;
                 // std::cout << "in US_MC IDX2 " << IDX2 << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
-                ierr = MatSetValues(A, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
                 // No stresses on the monomers, so no need to populate the symmetric terms
             }
         }
@@ -786,48 +786,48 @@ void PolyStokes::mob(){
                 IDX2 = ph2 + jj;
                 VALA = (PetscScalar)mob_a[ii][jj];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_a VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 IDX1 = ph3 + ii;
                 VALA = (PetscScalar)mob_b[ii][jj];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_b VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 IDX1 = ph2 + ii;
                 IDX2 = ph3 + jj; 
                 VALA = (PetscScalar)mob_bt[ii][jj];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_bt VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 IDX1 = ph3 + ii;
                 IDX2 = ph4 + jj;
                 VALA = (PetscScalar)mob_c[ii][jj];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_c VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 // Symmetric contributions
                 IDX1 = ph2 + ii;
                 IDX2 = ph1 + jj;
                 VALA = (PetscScalar)mob_a[jj][ii];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_a VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 IDX1 = ph4 + ii;
                 VALA = -(PetscScalar)mob_b[jj][ii];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_b VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 IDX1 = ph1 + ii;
                 IDX2 = ph4 + jj;
                 VALA = -(PetscScalar)mob_bt[jj][ii];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_bt VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 IDX1 = ph4 + ii;
                 IDX2 = ph3 + jj; 
                 VALA = (PetscScalar)mob_c[jj][ii];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_c VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
             }
 
             for( jj = 0; jj < const5; jj++){
@@ -837,31 +837,31 @@ void PolyStokes::mob(){
                 VALA = (PetscScalar)mob_gt[ii][jj];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_gt VALA " << VALA << std::endl;
                 // 1-2 interaction
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
-                ierr = MatSetValues(A, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
                 
                 IDX1 = ph2 + ii;
                 IDX2 = ph5 + jj;
                 VALA *= -1.0;
                 // 2-1 interaction
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_gt VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
-                ierr = MatSetValues(A, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 IDX1 = ph3 + ii;
                 IDX2 = ph6 + jj;
                 VALA = (PetscScalar)mob_ht[ii][jj];
                 // 1-2 interaction
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_ht VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
-                ierr = MatSetValues(A, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
                 IDX1 = ph4 + ii;
                 IDX2 = ph5 + jj;
                 // 2-1 interaction
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_ht VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
-                ierr = MatSetValues(A, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
             }
         }
@@ -872,13 +872,13 @@ void PolyStokes::mob(){
                 IDX2 = ph6 + jj;
                 VALA = (PetscScalar)mob_m[ii][jj];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_m VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
                 
                 IDX1 = ph6 + ii;
                 IDX2 = ph5 + jj;
                 VALA = (PetscScalar)mob_m[jj][ii];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_m T VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(M, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
             }
         }
     }
@@ -888,6 +888,24 @@ void PolyStokes::mob(){
     // PetscReal tol = 1e-10; // Tolerance for comparison
 
     // Assemble the saddle point matrix matrix
+    // ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+    // ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+
+    ierr = MatAssemblyBegin(M, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+    ierr = MatAssemblyEnd(M, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+
+    // Copy the assembled grand mobility M into the top-left block of A.
+    // M is nm3nc11 x nm3nc11 and occupies rows/cols [0, nm3nc11) of A (no shift).
+    PetscInt msize;
+    ierr = MatGetSize(M, &msize, NULL); CHKERRV(ierr);
+
+    std::vector<PetscInt>    idx(msize);
+    for( ii = 0; ii < msize; ii++ ){ idx[ii] = ii; }
+    std::vector<PetscScalar> Mvals((size_t)msize * msize);
+
+    ierr = MatGetValues(M, msize, idx.data(), msize, idx.data(), Mvals.data()); CHKERRV(ierr);
+    ierr = MatSetValues(A, msize, idx.data(), msize, idx.data(), Mvals.data(), INSERT_VALUES); CHKERRV(ierr);
+
     ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
     ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
 
@@ -895,25 +913,27 @@ void PolyStokes::mob(){
     // MatView(M, PETSC_VIEWER_STDOUT_SELF);
 
     // Check for symmetry
-    // ierr = MatIsSymmetric(A, tol, &isSymmetric); CHKERRV(ierr);
+    PetscReal tol = 1e-10;
+    PetscBool isSymmetric;
+    ierr = MatIsSymmetric(M, tol, &isSymmetric); CHKERRV(ierr);
 
-    // // Print result
-    // if (isSymmetric == PETSC_TRUE) {
-    //     PetscPrintf(PETSC_COMM_WORLD, "The matrix A is symmetric.\n");
-    // } else {
-    //     PetscPrintf(PETSC_COMM_WORLD, "The matrix A is not symmetric.\n");
-    // }
+    // Print result
+    if (isSymmetric == PETSC_TRUE) {
+        PetscPrintf(PETSC_COMM_WORLD, "The matrix M is symmetric.\n");
+    } else {
+        PetscPrintf(PETSC_COMM_WORLD, "The matrix M is not symmetric.\n");
+    }
 
     // Save matrix to file
 
-    // if( timeinfo.t == timeinfo.dt ){
-    //     PetscViewer viewer;
-    //     PetscViewerASCIIOpen(PETSC_COMM_WORLD, "saddle.csv", &viewer);
-    //     PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_DENSE); // Forces dense output
-    //     MatView(A, viewer);
-    //     PetscViewerPopFormat(viewer);
-    //     PetscViewerDestroy(&viewer);
-    // }
+    if( timeinfo.t ){
+        PetscViewer viewer;
+        PetscViewerASCIIOpen(PETSC_COMM_WORLD, "mob.csv", &viewer);
+        PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_DENSE); // Forces dense output
+        MatView(M, viewer);
+        PetscViewerPopFormat(viewer);
+        PetscViewerDestroy(&viewer);
+    }
 
     return;
 }

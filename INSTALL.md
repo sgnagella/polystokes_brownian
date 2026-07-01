@@ -16,6 +16,7 @@ done on this machine; adjust paths and versions to match your system.
 | Boost       | 1.83 headers (system, `/usr/include/boost`)        |
 | Python      | 3.11.15 in a dedicated conda env `polystokes`      |
 | PETSc       | 3.25.2 (release), at `/home/snagella/Software/petsc` |
+| SLEPc       | 3.25.1, at `/home/snagella/Software/slepc`         |
 
 ---
 
@@ -76,6 +77,49 @@ to locate PETSc.
 
 ---
 
+## 1b. Install SLEPc
+
+The Brownian-motion feature needs the matrix square root of the mobility, which
+PolyStokes computes with **SLEPc** (the eigenproblem/`SVD`/matrix-function
+companion to PETSc). `CMakeLists.txt` declares it as a hard dependency:
+
+```cmake
+pkg_check_modules(SLEPc REQUIRED IMPORTED_TARGET slepc)
+```
+
+so the build will not configure unless `pkg-config` can find SLEPc.
+
+SLEPc is built *against the PETSc arch from section 1* — it reuses the same
+`PETSC_DIR`/`PETSC_ARCH`, compilers, and MPICH. SLEPc source lives at
+`/home/snagella/Software/slepc` (version 3.25.1, matching PETSc 3.25.x).
+
+### 1b.1 Configure and build
+
+```bash
+export PETSC_DIR=/home/snagella/Software/petsc
+export PETSC_ARCH=arch-linux-c-debug
+export SLEPC_DIR=/home/snagella/Software/slepc
+
+cd $SLEPC_DIR
+./configure
+make SLEPC_DIR=$SLEPC_DIR PETSC_DIR=$PETSC_DIR PETSC_ARCH=$PETSC_ARCH
+make SLEPC_DIR=$SLEPC_DIR PETSC_DIR=$PETSC_DIR PETSC_ARCH=$PETSC_ARCH check
+```
+
+`./configure` takes no extra options here — it picks up everything (BLAS/LAPACK,
+MPICH, Fortran-disabled settings) from the already-configured PETSc via
+`PETSC_DIR`/`PETSC_ARCH`.
+
+After building, SLEPc exposes its own `pkg-config` file at
+`$SLEPC_DIR/$PETSC_ARCH/lib/pkgconfig/slepc.pc`, which the PolyStokes build uses
+to locate SLEPc.
+
+> Note: SLEPc must be rebuilt for each PETSc arch you use. If you add an
+> optimized PETSc arch (see the note at the end), re-run SLEPc's `configure`/
+> `make` with that `PETSC_ARCH` before rebuilding PolyStokes against it.
+
+---
+
 ## 2. Prepare the `polystokes` conda environment
 
 PolyStokes is installed into a dedicated conda env. On this machine the env
@@ -114,20 +158,23 @@ sudo apt update && sudo apt install libboost-all-dev   # provides Boost 1.83 in 
 
 ## 3. Build and install PolyStokes
 
-PolyStokes uses `scikit-build-core` + CMake + pybind11. CMake finds PETSc via
-`pkg-config`, so `PKG_CONFIG_PATH` must point at the PETSc arch built above.
+PolyStokes uses `scikit-build-core` + CMake + pybind11. CMake finds PETSc and
+SLEPc via `pkg-config`, so `PKG_CONFIG_PATH` must point at **both** the PETSc and
+SLEPc arch directories built above.
 
 ```bash
 source /home/snagella/miniconda3/etc/profile.d/conda.sh
 conda activate polystokes
 
-# Point pkg-config at the PETSc build
+# Point pkg-config at the PETSc and SLEPc builds
 export PETSC_DIR=/home/snagella/Software/petsc
 export PETSC_ARCH=arch-linux-c-debug
-export PKG_CONFIG_PATH=$PETSC_DIR/$PETSC_ARCH/lib/pkgconfig:$PKG_CONFIG_PATH
+export SLEPC_DIR=/home/snagella/Software/slepc
+export PKG_CONFIG_PATH=$PETSC_DIR/$PETSC_ARCH/lib/pkgconfig:$SLEPC_DIR/$PETSC_ARCH/lib/pkgconfig:$PKG_CONFIG_PATH
 
-# Sanity check — should print 3.25.2
+# Sanity check — should print 3.25.2 and 3.25.1
 pkg-config --modversion petsc
+pkg-config --modversion slepc
 
 # Build and install (build isolation pulls scikit-build-core, pybind11,
 # setuptools, wheel automatically from pyproject.toml)
@@ -139,35 +186,55 @@ This compiles the C++ sources and installs the `PolyStokes` extension module
 (`PolyStokes.cpython-311-x86_64-linux-gnu.so`) into the env's `site-packages`.
 
 > Note: the `CMakeLists.txt` hardcodes `PETSC_DIR`/`PETSC_ARCH` to a cluster
-> path, but those variables are unused — PETSc is located purely through
-> `pkg-config` and `PKG_CONFIG_PATH`. Only `PKG_CONFIG_PATH` matters here.
+> path, but those variables are unused — PETSc and SLEPc are located purely
+> through `pkg-config` and `PKG_CONFIG_PATH`. Only `PKG_CONFIG_PATH` matters here.
 
 ---
 
 ## 4. Runtime environment
 
-The extension links PETSc's **shared** libraries, so `LD_LIBRARY_PATH` must
-include the PETSc arch `lib` directory whenever PolyStokes is imported.
-Otherwise `import PolyStokes` fails to find `libpetsc.so`.
+The extension links PETSc's and SLEPc's **shared** libraries, so
+`LD_LIBRARY_PATH` must include **both** arch `lib` directories whenever
+PolyStokes is imported. Otherwise `import PolyStokes` fails to find `libpetsc.so`
+or `libslepc.so`.
 
 ```bash
 conda activate polystokes
 export PETSC_DIR=/home/snagella/Software/petsc
 export PETSC_ARCH=arch-linux-c-debug
-export LD_LIBRARY_PATH=$PETSC_DIR/$PETSC_ARCH/lib:$LD_LIBRARY_PATH
+export SLEPC_DIR=/home/snagella/Software/slepc
+export LD_LIBRARY_PATH=$PETSC_DIR/$PETSC_ARCH/lib:$SLEPC_DIR/$PETSC_ARCH/lib:$LD_LIBRARY_PATH
 ```
 
 To make this automatic on every `conda activate polystokes`, create an
-activation hook:
+activation hook. Include `PKG_CONFIG_PATH` as well so the hook also covers
+**rebuilds** — with it set, `pip install .` finds PETSc/SLEPc via `pkg-config`
+without any manual exports (see section 3), so the same hook serves both running
+and rebuilding:
 
 ```bash
 mkdir -p "$CONDA_PREFIX/etc/conda/activate.d"
 cat > "$CONDA_PREFIX/etc/conda/activate.d/polystokes_env.sh" <<'EOF'
 export PETSC_DIR=/home/snagella/Software/petsc
 export PETSC_ARCH=arch-linux-c-debug
-export LD_LIBRARY_PATH=$PETSC_DIR/$PETSC_ARCH/lib:$LD_LIBRARY_PATH
+export SLEPC_DIR=/home/snagella/Software/slepc
+export LD_LIBRARY_PATH=$PETSC_DIR/$PETSC_ARCH/lib:$SLEPC_DIR/$PETSC_ARCH/lib:$LD_LIBRARY_PATH
+export PKG_CONFIG_PATH=$PETSC_DIR/$PETSC_ARCH/lib/pkgconfig:$SLEPC_DIR/$PETSC_ARCH/lib/pkgconfig:$PKG_CONFIG_PATH
 EOF
 ```
+
+With this hook in place, both building and running reduce to:
+
+```bash
+conda activate polystokes
+cd /home/snagella/Projects/SD/polystokes_brownian
+pip install .          # rebuild — PETSc/SLEPc found via PKG_CONFIG_PATH
+python test_sim.py     # run — shared libs found via LD_LIBRARY_PATH
+```
+
+> Note: the hook hardcodes `arch-linux-c-debug`. If you build the optimized arch
+> (see the note at the end), update `PETSC_ARCH` in the hook — both the `lib` and
+> `pkgconfig` paths derive from it, so that one line is the only change.
 
 ---
 
@@ -177,7 +244,8 @@ EOF
 conda activate polystokes
 export PETSC_DIR=/home/snagella/Software/petsc
 export PETSC_ARCH=arch-linux-c-debug
-export LD_LIBRARY_PATH=$PETSC_DIR/$PETSC_ARCH/lib:$LD_LIBRARY_PATH
+export SLEPC_DIR=/home/snagella/Software/slepc
+export LD_LIBRARY_PATH=$PETSC_DIR/$PETSC_ARCH/lib:$SLEPC_DIR/$PETSC_ARCH/lib:$LD_LIBRARY_PATH
 export MPLBACKEND=Agg   # headless plotting (WSL has no display)
 
 cd /home/snagella/Projects/SD/polystokes_public_repo
@@ -204,8 +272,12 @@ Expected: the solver initializes, integrates from `Time 0.001` to `Time 0.191`
   ./configure PETSC_ARCH=arch-linux-c-opt --with-cc=gcc --with-cxx=g++ \
     --with-fc=0 --download-f2cblaslapack --download-mpich --with-debugging=0
   make PETSC_ARCH=arch-linux-c-opt all
+  # rebuild SLEPc against the optimized arch as well
+  cd /home/snagella/Software/slepc
+  PETSC_ARCH=arch-linux-c-opt ./configure
+  make PETSC_ARCH=arch-linux-c-opt
   # then re-export PETSC_ARCH/PKG_CONFIG_PATH/LD_LIBRARY_PATH for arch-linux-c-opt
-  # and re-run `pip install .`
+  # (covering both PETSc and SLEPc) and re-run `pip install .`
   ```
 
 - **Portability note (Boost).** Boost is not declared in `CMakeLists.txt`; the

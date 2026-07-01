@@ -9,6 +9,13 @@ using namespace arrays;
 void PolyStokes::step(){
     // Time-advance the particle positions
 
+    if(pinfo.kT >0){
+        for (int i = 0; i < consts.n3; i++){
+            x[i] += 0.001 * fext[i]; // undo drift displacement from previous step
+            x[i] += 1000.0*udiff[i]*timeinfo.dt; // multiplied by inverse delta to ensure correct scaling of the drift contribution to the particle displacements
+        }
+    }
+
     // std::cout << "Time advancing the trajectory..." << std::endl;
     for( int i = 0; i < consts.n3; i++){
         x[i] += up[i]*timeinfo.dt;

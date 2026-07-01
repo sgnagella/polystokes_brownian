@@ -5,7 +5,8 @@
 
 // Define struct containing polymer parameters
 struct ParticleInfo{
-    int Np; 
+    double kT;
+    int Np;
     int Nmono_per_chain;
     int Nc;
     int Nm;

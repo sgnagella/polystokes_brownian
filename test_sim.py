@@ -19,7 +19,7 @@ def main(beta=1, check_conf=False):
     assert Np == N_trapped + N_mono_total, 'Number of particles does not match the number of trapped particles and polymer chains'
 
     dt = 0.001
-    samplerate = 10
+    samplerate = 1; int(1/dt)
     
     params_sim = {
         "dt": dt,
@@ -40,9 +40,9 @@ def main(beta=1, check_conf=False):
             bond_ids[1, kk] = ii * N_mono + jj + 1
             kk += 1
     
-    monomer_x0 = 2.8; 1.7; 2.8; 3.5
+    monomer_x0 = 4; 2.8; 1.7; 2.8; 3.5
     r12 = 6; 3.5; 2.8; 7  # center-to-center distance between the two particles
-    r0 = 2.8; 2.8; 2.01*beta; 2.8 # equilibrium bond length
+    r0 = 2.01 * beta; 1.5; 2.8; 2.01*beta; 2.8 # equilibrium bond length
     
     poly_pos = np.array([
         [monomer_x0, 0, 0],
@@ -134,25 +134,24 @@ def main(beta=1, check_conf=False):
         "bond_ids": bond_ids,
     }
     
-    # with open(os.path.join(data_save_dir, 'params.pkl'), 'wb') as f:
-    #     pickle.dump(params, f)
-    
-    with open(os.path.join('params.pkl'), 'wb') as f:
+    with open(os.path.join(data_save_dir, 'params.pkl'), 'wb') as f:
         pickle.dump(params, f)
     
     # Run the simulation
-    tmax = 0.2; 0.1; 2.5; 0.25
+    tmax = 5.0; 10.0; 0.2; 0.1; 2.5; 0.25
     # r0 = 2.8
     Lmax = 10*r0; 2.0*r0; 1.1*r0
-    kbond = 0.1; 10; Lmax**(-2) 
+    kbond = 1.0; 10.0; 0.1; 10; Lmax**(-2) 
     tau = 1000
     ktrap = 500
     tstart = 0
-    trun = 0.1;1.0; 0.50; 0.1; 0.25; 2.0; 0.2
+    trun = 0.1; 5.0; 0.1;1.0; 0.50; 0.1; 0.25; 2.0; 0.2
+    kT = 1.0
     
     sim = PolyStokes.PolyStokes(dt, samplerate, tmax, data_config_dir, mm_HI=False, chain_HI=True, fene=False, record_forces=True)
     
     sim.particle_info(
+        kT,
         Np, 
         N_trapped,
         N_mono_total,

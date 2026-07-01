@@ -42,9 +42,13 @@ void moving_trap(Consts& consts, Coeffs& coeffs, TrapInfo& trapinfo, double& t){
 }
 
 void trapping_forces(PetscScalar fext[], Consts& consts, Coeffs& coeffs, ParticleInfo& pinfo, TrapInfo& trapinfo, double& t){
-    PetscInt i, j, i3, ic3; 
-    // Compute the trapping forces on the particles at time t
-    moving_trap(consts, coeffs, trapinfo, t);
+    PetscInt i, j, i3, ic3;
+    // Compute the trapping forces on the particles at time t.
+    // Static trap: xpos0 already holds each colloid's initial position (stored in
+    // initial_configuration), so the trap centers match the colloids' starting
+    // positions. We do NOT call moving_trap here, which would overwrite the first
+    // colloid's target with a circling position and drag it across.
+    // moving_trap(consts, coeffs, trapinfo, t);
     // std::cout << "Position of the moving trap: " << xpos0[0] << " " << xpos0[1] << " " << xpos0[2] << std::endl;
 
     int& Np = pinfo.Np;
@@ -140,18 +144,30 @@ void bond_forces(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, bool f
     return;
 }
 
-void PolyStokes::RHS(){
+void PolyStokes::RHS(bool drift){
     // This routine constructs the right-hand side of the saddle point matrix
     
     // Zero out rhs
     // std::cout << "Constructing the right-hand side of the saddle point matrix" << std::endl;
     PetscInt& nm3 = consts.nm3;
     PetscInt& nc3 = consts.nc3;
+    PetscInt& nm3nc6 = consts.nm3nc6;
     PetscInt& nm3nc3 = consts.nm3nc3;
     PetscInt& nm3nc11 = consts.nm3nc11;
 
     VecZeroEntries(rhs);
     PetscErrorCode ierr;
+
+    if (drift){
+        PetscInt i, fdriftindices[nm3nc6];
+        PetscScalar fdrift[nm3nc6];
+        for(i = 0; i < nm3nc6; i++){ fdrift[i] = fext[i]; }
+        std::iota(fdriftindices, fdriftindices + nm3nc6, nm3nc11);
+        ierr = VecSetValues(rhs, nm3nc6, fdriftindices, fdrift, INSERT_VALUES); CHKERRV(ierr);
+        ierr = VecAssemblyBegin(rhs); CHKERRV(ierr);
+        ierr = VecAssemblyEnd(rhs); CHKERRV(ierr);
+        return;
+    }
     PetscInt i, ishift, fintindices[nm3nc3];
     PetscScalar fint[nm3nc3];
 

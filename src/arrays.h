@@ -73,7 +73,9 @@ namespace arrays{
     extern Mat A; 
 
     extern Vec X;
+    extern Vec Xd;
     extern Vec rhs;
+    extern Vec W;
 
     // extern rank2_array zm; // grand mobility matrix
 
@@ -135,13 +137,17 @@ namespace arrays{
 
     // void initialize_Pinv(Petscint nm6nc17, PetscInt nm3nc11, PetscInt nm3nc6);
 
-    // void initialize_M(PetscInt nm3nc11);
+    void initialize_M(PetscInt nm3nc11);
 
     void initialize_B(PetscInt nm3nc11, PetscInt nm3nc6);
 
     void initialize_A(PetscInt nm6nc17, PetscInt nm3nc11, PetscInt nm3nc6);
 
     void initialize_X(PetscInt nm6nc17);
+
+    void initialize_Xd(PetscInt nm6nc17);
+
+    void initialize_W(PetscInt nm3nc11);
 
     void initialize_rhs(PetscInt nm6nc17);                  
 };

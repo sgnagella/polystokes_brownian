@@ -19,6 +19,10 @@ set(PETSC_ARCH "arch-linux-c-opt")
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PETSc REQUIRED IMPORTED_TARGET petsc)
 
+# Find SLEPc via pkg-config (used for the matrix square root of the mobility,
+# needed for Brownian motion). Requires SLEPc's pkgconfig dir on PKG_CONFIG_PATH.
+pkg_check_modules(SLEPc REQUIRED IMPORTED_TARGET slepc)
+
 # Include the PETSc CMake configuration files
 # find_package(PETSc REQUIRED HINTS ${PETSC_DIR})
 
@@ -35,6 +39,7 @@ find_package(pybind11 REQUIRED)
 # Include directories
 include_directories(
     ${PETSC_INCLUDE_DIRS}
+    ${SLEPc_INCLUDE_DIRS}
     # ${PETSC_DIR}/${PETSC_ARCH}/include
     # ${PETSC_DIR}/include
     # ${MPI_CXX_INCLUDE_DIRS}
@@ -65,6 +70,8 @@ set(SOURCES
     src/multi_arrays_initialize.cpp
     src/mob.cpp
     src/rhs.cpp
+    src/drift.cpp
+    src/slip_vel.cpp
     src/vel.cpp
     src/traj.cpp
     src/write_configuration.cpp
@@ -78,10 +85,11 @@ set(SOURCES
 # Define the Python module
 pybind11_add_module(${MODULE_NAME} ${SOURCES})
 
-# Link PETSc and MPI
+# Link PETSc, SLEPc, and MPI
 target_link_libraries(PolyStokes
     PRIVATE
     PkgConfig::PETSc
+    PkgConfig::SLEPc
     # ${PETSC_LIBRARIES}
     # # ${PETSC_DIR}/lib
     # # ${PETSC_DIR}/${PETSC_ARCH}/lib

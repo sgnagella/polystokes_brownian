@@ -151,8 +151,9 @@ void PolyStokes::set_consts(){
 
 }
 
-void PolyStokes::particle_info(int Np, int Nc, int Nm, int Npoly, int Nmono_per_chain, double beta, double kbond, double r0, double Lmax, double tau)
+void PolyStokes::particle_info(double kT, int Np, int Nc, int Nm, int Npoly, int Nmono_per_chain, double beta, double kbond, double r0, double Lmax, double tau)
 {
+    pinfo.kT = kT;
     pinfo.Np = Np;
     pinfo.Nc = Nc;
     pinfo.Nm = Nm;
@@ -165,6 +166,7 @@ void PolyStokes::particle_info(int Np, int Nc, int Nm, int Npoly, int Nmono_per_
     pinfo.tau = tau;
 
     // Print the input parameters
+    std::cout << "kT: " << pinfo.kT << std::endl;
     std::cout << "Np: " << pinfo.Np << std::endl;
     std::cout << "Nc: " << pinfo.Nc << std::endl;
     std::cout << "Nm: " << pinfo.Nm << std::endl;
@@ -182,7 +184,8 @@ void PolyStokes::particle_info(int Np, int Nc, int Nm, int Npoly, int Nmono_per_
     pinfo.npair_BB = Nc * (Nc-1) / 2;
     pinfo.npair_AB = pinfo.npair - pinfo.npair_AA - pinfo.npair_BB;
     pinfo.nbonds_per_poly = Nmono_per_chain - 1;
-    pinfo.nbonds = pinfo.nbonds_per_poly * Npoly;
+    // linear intra-chain bonds, plus one tether per chain (chain end -> host colloid)
+    pinfo.nbonds = pinfo.nbonds_per_poly * Npoly + Npoly;
 
     pinfo.beta_inv = 1.0 / beta;
     pinfo.beta2 = beta * beta;

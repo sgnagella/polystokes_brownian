@@ -89,14 +89,14 @@ def main(beta=1):
     # types[:N_mono_total] = ['B'] * N_mono_total # GSD < 2.9.0
     typeids[:N_mono_total] = 1
     
-    L = 60
+    L = 65
     assert 0.5*L > np.max(np.abs(trajectory)), f"L/2={0.5*L} is smaller than the maximum particle position {np.max(np.abs(trajectory))}"
     
     box_vector = [L, L, L, 0, 0, 0]
 
-    with gsd.hoomd.open(name=output_file, mode='wb') as traj:
+    with gsd.hoomd.open(name=output_file, mode='w') as traj:
         for frame_idx in range(n_frames):
-            snap = gsd.hoomd.Snapshot()
+            snap = gsd.hoomd.Frame()
             snap.configuration.box = box_vector
             snap.particles.N = n_particles
             snap.particles.position = trajectory[frame_idx]

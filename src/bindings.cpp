@@ -53,7 +53,8 @@ PYBIND11_MODULE(PolyStokes, m) {
              py::arg("t")=0.0)
         .def("initial_configuration", &PolyStokes::initial_configuration, 
              py::arg("init_x0"), "Initialize the configuration of the particles")
-        .def("particle_info", &PolyStokes::particle_info, 
+        .def("particle_info", &PolyStokes::particle_info,
+             py::arg("kT"), 
              py::arg("Np"), 
              py::arg("Nc"), 
              py::arg("Nm"), 
