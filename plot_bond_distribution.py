@@ -13,36 +13,39 @@ import matplotlib.pyplot as plt
 
 from test_sim_dumbbells_thermal import read_trajectory, equilibrium_length_stats, minimum_image
 
-# --- parameters used in the simulation (test_sim_dumbbells_thermal.main defaults) ---
-beta = 0.1
-kbond, kT = 1.0, 1.0
-r0 = 2.0 * beta                    # 0.2
-N_dumbbell = 40
-config_dir = f"data/dumbbells_thermal_beta_{beta}/config"
+# --- locate the run and load the parameters it saved (test_sim_dumbbells_thermal.main) ---
+beta = 0.1                         # selects the run directory
+data_save_dir = f"data/dumbbells_thermal_beta_{beta}"
+config_dir = f"{data_save_dir}/config"
 
 trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))  # NumPy 2.0 renamed trapz
 
 
-def _load_box():
-    """Read the periodic box (if any) saved by the simulation run."""
-    ppath = f"data/dumbbells_thermal_beta_{beta}/params.pkl"
-    if os.path.exists(ppath):
-        with open(ppath, "rb") as f:
-            return pickle.load(f).get("box", None)
-    return None
+def _load_params():
+    """Load the simulation parameters pickled by test_sim_dumbbells_thermal.main."""
+    with open(f"{data_save_dir}/params.pkl", "rb") as f:
+        return pickle.load(f)
+
+
+params = _load_params()
+kbond = params["kbond"]
+kT = params["kT"]
+r0 = params["r0"]
+N_dumbbell = params["N_poly"]      # dumbbells are the "polymer chains" in the sim params
+box = params.get("box", None)
 
 
 def measured_bond_lengths(drop_transient=True):
     times, traj = read_trajectory(config_dir)
     b = traj[:, 1:2 * N_dumbbell:2, :] - traj[:, 0:2 * N_dumbbell:2, :]
-    b = minimum_image(b, _load_box())              # nearest image under PBC (no-op if unbounded)
+    b = minimum_image(b, box)                      # nearest image under PBC (no-op if unbounded)
     L = np.linalg.norm(b, axis=-1)                 # (frames, N_dumbbell)
     if drop_transient:                             # first frame ~ t=0 is pre-equilibrium
         L = L[times >= 0.5]
     return L.ravel()
 
 
-def main():
+def main(data_save_dir):
     L = measured_bond_lengths()
     n = L.size
 
@@ -93,4 +96,6 @@ def main():
 if __name__ == "__main__":
     import os
     os.makedirs("figures", exist_ok=True)
-    main()
+    beta = 0.1
+    data_save_dir = f"data/dumbbells_thermal_beta_{beta}"
+    main(data_save_dir=data_save_dir)

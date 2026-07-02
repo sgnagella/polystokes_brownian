@@ -3,17 +3,26 @@ Purely-thermal Brownian-dynamics test with hydrodynamic interactions (HI).
 
 Setup:
   - 40 free 2-bead dumbbells (harmonic bond, no colloid tether)
-  - 1 colloid trapped at the origin (provides HI; not a driving force on the beads)
+  - 1 colloid held in a harmonic trap at the origin (also provides HI; exerts no
+    driving force on the beads)
   - monomer-monomer HI off (mm_HI=False): the truncated far-field grand mobility
     is not positive-definite for many close monomers, so sqrt(M) fails with it on
   - No external driving on the dumbbells
 
-Diagnostic:
-  With only conservative bond/WCA forces and thermal noise, the bonds fluctuate
-  but must not drift. We sample every 1/dt steps and check that the mean bond
-  displacement (per-sample increment of the bond vector, and of the bond length)
-  is statistically consistent with zero. A nonzero mean would signal a spurious
-  systematic force from the integrator (e.g. an unbalanced thermal-drift term).
+Diagnostics:
+  (1) Bonds: with only conservative bond/WCA forces and thermal noise, the bonds
+      fluctuate but must not drift. We sample every 1/dt steps and check that the
+      mean bond displacement (per-sample increment of the bond vector, and of the
+      bond length) is statistically consistent with zero. A nonzero mean would
+      signal a spurious systematic force from the integrator (e.g. an unbalanced
+      thermal-drift term).
+  (2) Trapped colloid: with a nonzero trap stiffness ktrap, the colloid's position
+      must sample the Boltzmann distribution of the harmonic trap potential
+      V = 1/2 ktrap |x - x_trap|^2. We check that each Cartesian displacement is
+      Gaussian with variance kT/ktrap and that the radial displacement follows
+      P(r) ~ r^2 exp(-ktrap r^2 / 2 kT) -- the r0 -> 0 analogue of the bond-length
+      test. (The dumbbell tethers integrate out to a colloid-position-independent
+      constant, so the colloid's marginal distribution is the pure trap Boltzmann.)
 """
 
 import numpy as np
@@ -121,6 +130,25 @@ def equilibrium_length_stats(kbond, r0, kT):
     return mean, mode, std
 
 
+def equilibrium_trap_stats(ktrap, kT):
+    """Theoretical equilibrium statistics for a colloid in a 3D harmonic trap
+    V = 1/2 ktrap |x - x_trap|^2.
+
+    Each Cartesian displacement component is Gaussian with mean 0 and variance
+    sigma^2 = kT/ktrap. The radial displacement r = |x - x_trap| then follows the
+    Maxwell-Boltzmann form P(r) ~ r^2 exp(-r^2 / 2 sigma^2) (the r^2 is the
+    spherical-shell Jacobian) -- exactly the r0 -> 0 limit of equilibrium_length_stats
+    with spring constant ktrap. The radial moments have closed forms:
+        <r>  = 2 sqrt(2/pi) sigma,  mode = sqrt(2) sigma,  std = sqrt(3 - 8/pi) sigma.
+    Returns (sigma, r_mean, r_mode, r_std).
+    """
+    sigma = np.sqrt(kT / ktrap)
+    r_mean = 2.0 * np.sqrt(2.0 / np.pi) * sigma
+    r_mode = np.sqrt(2.0) * sigma
+    r_std = np.sqrt(3.0 - 8.0 / np.pi) * sigma
+    return sigma, r_mean, r_mode, r_std
+
+
 def minimum_image(vec, box):
     """Minimum-image an array of separation vectors under an orthorhombic box.
     `box` is [Lx,Ly,Lz] (or None for no PBC). Matches the C++ Box convention."""
@@ -196,6 +224,94 @@ def bond_statistics(times, traj, N_dumbbell, kbond=1.0, r0=0.2, kT=1.0, box=None
     print("=" * 70 + "\n")
 
 
+def colloid_displacements(times, traj, N_trapped, box=None, drop_transient=0.2):
+    """Displacements of the trapped colloid(s) from their trap centers.
+
+    The colloids are the LAST N_trapped particles (see build_initial_config); the
+    trap center of each is its initial position, which equals the t=0 frame -- this
+    matches the C++ xpos0 convention (initial_configuration seeds xpos0). Positions
+    are taken to the nearest image of the trap center (no-op when box is None), and
+    the leading `drop_transient` fraction of the run is discarded so the colloid has
+    relaxed from its exact-center start (r=0 carries no Boltzmann weight).
+    Returns (disp, n_frames_used) with disp of shape (n_frames_used, N_trapped, 3).
+    """
+    pos = traj[:, -N_trapped:, :]                  # (frames, N_trapped, 3)
+    centers = traj[0, -N_trapped:, :]              # trap centers = initial positions
+    disp = minimum_image(pos - centers, box)
+    if drop_transient > 0.0:
+        t0 = times[0] + drop_transient * (times[-1] - times[0])
+        keep = times >= t0
+        disp = disp[keep]
+    return disp, disp.shape[0]
+
+
+def trap_statistics(times, traj, N_trapped, ktrap, kT=1.0, box=None,
+                    drop_transient=0.2):
+    """Verify the trapped colloid samples the harmonic-trap Boltzmann distribution.
+
+    Checks, on the colloid displacement from its trap center:
+      - each Cartesian component has mean 0 (z-test) and variance kT/ktrap;
+      - the radial displacement r=|x-x_trap| matches P(r) ~ r^2 exp(-ktrap r^2/2kT).
+
+    Note only N_trapped colloid(s) contribute, so the statistics are dominated by
+    the number of (decorrelated) time frames rather than the particle count.
+    """
+    n_frames = traj.shape[0]
+    if n_frames < 2:
+        print(f"Only {n_frames} frame(s) recorded; need >= 2 for trap statistics. "
+              f"Increase tmax.")
+        return
+
+    disp, n_used = colloid_displacements(times, traj, N_trapped, box, drop_transient)
+    comps = disp.reshape(-1, 3)                     # (n_used*N_trapped, 3)
+    r = np.linalg.norm(disp, axis=-1).reshape(-1)   # radial displacements, pooled
+    n = comps.shape[0]
+
+    sigma, r_mean, r_mode, r_std = equilibrium_trap_stats(ktrap, kT)
+
+    # per-axis mean (should vanish) and its standard error
+    mean_c = comps.mean(axis=0)
+    se_c = comps.std(axis=0, ddof=1) / np.sqrt(n)
+    # pooled per-component variance vs theory sigma^2 (all 3 axes pooled by isotropy)
+    var_meas = comps.reshape(-1).var(ddof=1)
+    sigma_meas = np.sqrt(var_meas)
+    # SE of a variance ~ var*sqrt(2/(N-1)) for uncorrelated normals (optimistic here;
+    # time-adjacent frames are correlated, so treat |z| as a guide, not a hard gate).
+    Ncomp = comps.size
+    se_var = var_meas * np.sqrt(2.0 / (Ncomp - 1))
+
+    pcts = np.percentile(r, [5, 50, 95])
+
+    def zline(name, m, s, target=0.0):
+        z = (m - target) / s if s > 0 else np.nan
+        flag = "OK" if abs(z) < 3 else "** off **"
+        return f"   {name} = {m:+.3e}  +/- {s:.3e}  (z = {z:+.2f} vs {target:g})  {flag}"
+
+    print("\n" + "=" * 70)
+    print("TRAPPED-COLLOID BOLTZMANN STATISTICS (harmonic trap, ktrap = "
+          f"{ktrap:g})")
+    print("=" * 70)
+    print(f"frames used        : {n_used}/{n_frames}   colloids: {N_trapped}   "
+          f"component samples: {Ncomp}")
+    print(f"time span (kept)    : {times[times >= times[0] + drop_transient*(times[-1]-times[0])][0]:.3f} "
+          f"-> {times[-1]:.3f}")
+    print("-" * 70)
+    print("Mean displacement per axis (centered trap => 0):")
+    for a, m, s in zip("xyz", mean_c, se_c):
+        print(zline(f"<dx_{a}>", m, s))
+    print("-" * 70)
+    print("Per-component variance  (theory sigma^2 = kT/ktrap):")
+    print(zline("Var[dx]", var_meas, se_var, target=sigma**2))
+    print(f"   sigma: simulated={sigma_meas:.4f}   theory={sigma:.4f}   "
+          f"(ratio {sigma_meas/sigma:.3f})")
+    print("-" * 70)
+    print("Radial displacement distribution  (pdf ~ r^2 exp(-ktrap r^2 / 2kT)):")
+    print(f"   simulated : mean={r.mean():.4f}  std={r.std():.4f}  "
+          f"[5/50/95 %ile = {pcts[0]:.4f}/{pcts[1]:.4f}/{pcts[2]:.4f}]")
+    print(f"   theory    : mean={r_mean:.4f}  mode={r_mode:.4f}  std={r_std:.4f}")
+    print("=" * 70 + "\n")
+
+
 # ----------------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------------
@@ -216,7 +332,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
     tau = 1000
     kT = 1.0
     epsilon = 1.0                              # WCA excluded-volume energy scale
-    ktrap = 0; 500                                # holds the colloid at the origin
+    ktrap = 10                                # harmonic trap holding the colloid at the origin
 
     conf = build_initial_config(N_dumbbell, r0, box=box)
     bond_ids = build_bond_ids(N_dumbbell)
@@ -232,7 +348,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
             "Np": Np, "beta": beta, "N_trapped": N_trapped,
             "N_poly": N_dumbbell, "N_mono": N_mono,
             "N_mono_total": N_mono_total, "bond_ids": bond_ids,
-            "box": box,
+            "box": box, "kT": kT, "kbond": kbond, "r0": r0, "ktrap": ktrap,
         }
         with open(os.path.join(data_save_dir, 'params.pkl'), 'wb') as f:
             pickle.dump(params, f)
@@ -254,12 +370,17 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
         sim.initial_configuration(conf.flatten())
         sim.run()
 
-    # Analyze bond displacements
+    # Analyze bond displacements (undriven dumbbells: no drift)
     times, traj = read_trajectory(data_config_dir)
     bond_statistics(times, traj, N_dumbbell, kbond=kbond, r0=r0, kT=kT, box=box)
+
+    # Verify the trapped colloid samples the harmonic-trap Boltzmann distribution.
+    # (For a histogram-vs-theory figure, run plot_trap_distribution.py afterward.)
+    if ktrap > 0:
+        trap_statistics(times, traj, N_trapped, ktrap, kT=kT, box=box)
 
 
 if __name__ == "__main__":
     dt = 0.0005
-    samplerate = 2
+    samplerate = 2; int(1/dt) # sample on brownian timescale of colloid
     main(dt=dt, samplerate=samplerate, tmax=0.5, box=[8,8,8])
