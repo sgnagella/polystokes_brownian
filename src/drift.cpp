@@ -40,6 +40,7 @@ void PolyStokes::drift(){
     const PetscScalar *X_array;
     VecGetArrayRead(Xd, &X_array);
     memcpy(arrays::drift.data(), &X_array[consts.nm3nc11], consts.PetscScalarSize);
+    memcpy(arrays::sb.data(), &X_array[consts.nm3nc6], consts.nc5 * sizeof(PetscScalar));
     VecRestoreArrayRead(Xd, &X_array);
 
     // Move to the opposite probe point x - eps*W (net -2*eps*W from x + eps*W)
@@ -52,7 +53,8 @@ void PolyStokes::drift(){
     // 2nd drift solve: warm-start from the 1st drift solve (same RHS, tiny position change)
     solve_saddle(Xd, true);
     VecGetArrayRead(Xd, &X_array);
-    for(int i = 0; i < nm3nc6; i++){ udiff[i] = X_array[consts.nm3nc11 + i] - arrays::drift[i]; }
+    for(int i = 0; i < nm3nc6; i++){ udiff[i] = X_array[consts.nm3nc11 + i] - arrays::drift[i]; }     // udiff = M(x-eps*W)W - M(x+eps*W)W
+    for(int i = 0; i < consts.nc5; i++){ sb[i] = (sb[i] - X_array[consts.nm3nc6 + i]) / (2 * eps); } // sb = S(+eps) - S(-eps) / (2*eps)
     VecRestoreArrayRead(Xd, &X_array);
 
     return;

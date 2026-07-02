@@ -126,6 +126,8 @@ void PolyStokes::run(){
             if(record_forces){
                 write_forces();
             }
+            
+            write_stresslets();
         }
         // std::cout << "\n" << std::endl;
     }

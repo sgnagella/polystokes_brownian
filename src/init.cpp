@@ -117,6 +117,7 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts){
     initialize_fext( consts.nm3nc6 );
     initialize_drift( consts.nm3nc6 );  
     initialize_fb( consts.nm3nc11 );
+    initialize_sb( consts.nc5 );
     // initialize_q( consts.nc4 );
     
     std::cout << "Bookeeping arrays..." << std::endl;

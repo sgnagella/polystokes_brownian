@@ -86,6 +86,7 @@ private:
     void write_configuration();
     void write_quaternions();
     void write_forces();
+    void write_stresslets();
     void signal_handler(int signum);
     void cleanup();
 };

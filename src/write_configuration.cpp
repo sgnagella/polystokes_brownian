@@ -121,3 +121,46 @@ void PolyStokes::write_forces(){
     }
     return;
 }
+
+
+void PolyStokes::write_stresslets(){
+    // Write the configuration of the particles to a file
+    std::ostringstream oss;
+    double& t = timeinfo.t;
+    double time; 
+    int i, i5;
+    int& Nm = pinfo.Nm;
+    int& Nc = pinfo.Nc;
+    int& Np = pinfo.Np;
+    int& ndim = consts.ndim;
+    int& n3 = consts.n3;
+    int& nc5 = consts.nc5;
+    memcpy(&time, &t, sizeof(double));
+    oss << output_dir << "/brownian_stresslet_" <<  time << "_.txt"; 
+    std::string filename_str = oss.str();
+    const char* filename = filename_str.c_str();
+    FILE* file; 
+    file = fopen(filename, "w");
+
+    if (file != NULL){
+        for(i=0; i< Nc; i++){
+            i5 = 5 * i; 
+            fprintf(file, "%.10f", sb[i5]);
+            fprintf(file, "\t");
+            fprintf(file, "%.10f", sb[i5+1]);
+            fprintf(file, "\t");
+            fprintf(file, "%.10f", sb[i5+2]);
+            fprintf(file, "\t");
+            fprintf(file, "%.10f", sb[i5+3]);
+            fprintf(file, "\t");
+            fprintf(file, "%.10f", sb[i5+4]);
+            fprintf(file, "\n");
+        }
+        fclose(file);
+
+    }   
+    else{
+        std::cerr << "Error: Could not open the file for writing in write_stresslets." << std::endl;
+    }
+    return;
+}
