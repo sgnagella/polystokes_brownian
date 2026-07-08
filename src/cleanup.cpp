@@ -23,6 +23,9 @@ void PolyStokes::cleanup(){
     if (X) { ierr = VecDestroy(&X); CHKERRV(ierr); }
     if (ksp) { ierr = KSPDestroy(&ksp); CHKERRV(ierr); }
 
+    // Schur-complement workspace (only built when kT > 0 && !mm_HI)
+    if (Smat) { ierr = MatDestroy(&Smat); CHKERRV(ierr); }
+
     PetscBool petsc_initialized, petsc_finalized;
     PetscInitialized(&petsc_initialized);
     PetscFinalized(&petsc_finalized);

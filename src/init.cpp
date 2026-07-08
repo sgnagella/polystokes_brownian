@@ -41,38 +41,12 @@ void PolyStokes::init_solver(){
     ierr = KSPSetType(ksp, KSPGMRES); CHKERRV(ierr);
     ierr = KSPGetPC(ksp, &pc); CHKERRV(ierr);
 
-    // uncomment to use custom preconditioner
+    // Jacobi preconditioner: diagonal scaling only, O(N) per apply -- no dense LU
+    // factorization (the O(N^3) FieldSplit-Schur cost). fix-diagonal replaces the
+    // zero diagonal entries of the saddle constraint block so 1/diag is finite.
     std::cout << "Preconditioner set" << std::endl;
-    ierr = PCSetType(pc, PCFIELDSPLIT); CHKERRV(ierr);
-
-    if(mm_HI){
-        // uncomment below to use explicit shcur field splitting 
-        IS is_F, is_V; 
-
-        PetscInt idxf[consts.nm3nc11];
-        PetscInt idxvel[consts.nm3nc6];
-
-        std::iota(idxf, idxf + consts.nm3nc11, 0);
-        std::iota(idxvel, idxvel + consts.nm3nc6, consts.nm3nc11);
-        ierr = ISCreateGeneral(PETSC_COMM_WORLD, consts.nm3nc11, idxf, PETSC_COPY_VALUES, &is_F); CHKERRV(ierr);
-        ierr = ISCreateGeneral(PETSC_COMM_WORLD, consts.nm3nc6, idxvel, PETSC_COPY_VALUES, &is_V); CHKERRV(ierr);
-
-        PCFieldSplitSetIS(pc, "F", is_F);   
-        PCFieldSplitSetIS(pc, "V", is_V);    
-
-        // ierr = PCFieldSplitSetType(pc, PC_COMPOSITE_GKB); CHKERRV(ierr);
-        PCFieldSplitSetType(pc, PC_COMPOSITE_SCHUR);  // or PC_COMPOSITE_MULTIPLICATIVE
-        PCFieldSplitSchurPrecondition(pc, PC_FIELDSPLIT_SCHUR_PRE_SELFP, NULL);  // Or PC_FIELDSPLIT_SCHUR_PRE_A11
-
-        // Clean up index sets
-        ierr = ISDestroy(&is_F); CHKERRV(ierr);
-        ierr = ISDestroy(&is_V); CHKERRV(ierr);
-
-    }
-    else{
-        // Detect saddle point structure
-        ierr = PCFieldSplitSetDetectSaddlePoint(pc, PETSC_TRUE); CHKERRV(ierr);
-    }
+    ierr = PCSetType(pc, PCJACOBI); CHKERRV(ierr);
+    ierr = PCJacobiSetFixDiagonal(pc, PETSC_TRUE); CHKERRV(ierr);
 
     std::cout << "Set operators" << std::endl;
     ierr = KSPSetFromOptions(ksp); CHKERRV(ierr);
@@ -84,16 +58,31 @@ void PolyStokes::init_solver(){
 
 void PolyStokes::init_square_root_solver(){
     PetscErrorCode ierr;
-    // Define function f(x) = sqrt(x)
-    ierr = FNCreate(PETSC_COMM_WORLD, &f); CHKERRV(ierr);
-    ierr = FNSetType(f, FNSQRT); CHKERRV(ierr);
 
-    // Create the MFN Solver
-    ierr = MFNCreate(PETSC_COMM_WORLD, &mfn); CHKERRV(ierr);
-    ierr = MFNSetOperator(mfn, M); CHKERRV(ierr);
-    ierr = MFNSetFN(mfn, f); CHKERRV(ierr);
-    ierr = MFNSetFromOptions(mfn); CHKERRV(ierr);
-    ierr = MFNSetUp(mfn); CHKERRV(ierr);
+    if( mm_HI ){
+        // Full grand-mobility sqrt via SLEPc MFN. The operator is the mobility block
+        // of A (its top-left [0, nm3nc11) block); since A is reassembled every step,
+        // the operator is a view bound per-step in solve_slip_vel, not here.
+        ierr = FNCreate(PETSC_COMM_WORLD, &f); CHKERRV(ierr);
+        ierr = FNSetType(f, FNSQRT); CHKERRV(ierr);
+
+        ierr = MFNCreate(PETSC_COMM_WORLD, &mfn); CHKERRV(ierr);
+        ierr = MFNSetFN(mfn, f); CHKERRV(ierr);
+        ierr = MFNSetFromOptions(mfn); CHKERRV(ierr);
+    }
+    else {
+        // Monomer-monomer HI disabled: M^mm is diagonal (= beta_inv*I) and we sample
+        // the slip velocity with a block-Cholesky factor -- only the small colloid
+        // Schur complement S = M^cc - beta*M^cm M^mc (size nc11) needs a square root,
+        // taken by an eigenvalue-floored eigendecomposition / Lanczos (build_slip_vel_schur).
+        // Smat is the reused dense workspace.
+        PetscInt& nc11 = consts.nc11;
+
+        ierr = MatCreate(PETSC_COMM_SELF, &Smat); CHKERRV(ierr);
+        ierr = MatSetSizes(Smat, PETSC_DECIDE, PETSC_DECIDE, nc11, nc11); CHKERRV(ierr);
+        ierr = MatSetType(Smat, MATDENSE); CHKERRV(ierr);
+        ierr = MatSetUp(Smat); CHKERRV(ierr);
+    }
 
     return;
 }
@@ -134,7 +123,7 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts){
     initialize_mesid( consts.id_rows, consts.const5);
 
     std::cout << "PETSC arrays ..." << std::endl;
-    initialize_M(consts.nm3nc11);
+    // No separate grand mobility M: it is assembled directly into A's top-left block.
     initialize_B(consts.nm3nc11, consts.nm3nc6);
     std::cout << "A" << std::endl;
     initialize_A(consts.nm6nc17, consts.nm3nc11, consts.nm3nc6);

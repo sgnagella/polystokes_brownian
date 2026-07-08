@@ -337,7 +337,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
     conf = build_initial_config(N_dumbbell, r0, box=box)
     bond_ids = build_bond_ids(N_dumbbell)
 
-    data_save_dir = f'data/dumbbells_thermal_beta_{beta}_fene_{fene}'
+    data_save_dir = f'data/test_dumbbells_thermal_beta_{beta}_fene_{fene}'
     data_config_dir = os.path.join(data_save_dir, 'config')
     if run:
         if os.path.exists(data_config_dir):
@@ -383,4 +383,5 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
 if __name__ == "__main__":
     dt = 0.0001
     samplerate = 10; int(1/dt) # sample on brownian timescale of colloid
-    main(dt=dt, samplerate=samplerate, tmax=50.0, box=[20,20,20])
+    beta = 0.1
+    main(beta=beta, dt=dt, samplerate=samplerate, tmax=5.0, box=[20,20,20])

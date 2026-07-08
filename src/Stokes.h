@@ -42,8 +42,14 @@ private:
 
     KSP ksp;
     PC pc;
-    MFN mfn;
-    FN f; 
+    MFN mfn = nullptr;   // full-M sqrt solver, created only when mm_HI (operator = A's mobility block)
+    FN f = nullptr;
+
+    // Dense workspace for the colloid Schur complement S = M^cc - beta*M^cm M^mc
+    // (nc11 x nc11), used when mm_HI == false to sample Brownian slip velocities
+    // via a block-Cholesky factor of the grand mobility. Its square root is taken
+    // by an eigenvalue-floored symmetric eigendecomposition (see build_slip_vel_schur).
+    Mat Smat = nullptr;
 
     bool petsc_finalized = false;
     std::mt19937_64 rng;
@@ -80,6 +86,8 @@ private:
     void solve_saddle(Vec X_out, bool warm_start=false);
     void sample_slip_vel();
     void solve_slip_vel();
+    void build_slip_vel_schur();
+    void schur_sqrt_lanczos(Mat Bcm, Mat Ccc, double beta, Vec b, Vec out, PetscInt kmax);
     void new_vel();
     void step();
     void step_quaternion();
