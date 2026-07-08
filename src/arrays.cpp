@@ -63,6 +63,8 @@ namespace arrays{
     // Mat ZMES;
     // Mat Pinv;
     Mat M;
+    Mat Mcm_block;
+    Mat Mcc_block;
     Mat B;
     Mat A;
 
@@ -289,6 +291,20 @@ namespace arrays{
         MatSetSizes(M, PETSC_DECIDE, PETSC_DECIDE, nm3nc11, nm3nc11);
         MatSetType(M, MATDENSE);
         MatSetUp(M);
+    }
+
+    void initialize_arrowhead(PetscInt nc11, PetscInt nm3){
+        // M^cm : nc11 x nm3 colloid<->monomer coupling (rebuilt each step in mob()).
+        MatCreate(PETSC_COMM_SELF, &Mcm_block);
+        MatSetSizes(Mcm_block, PETSC_DECIDE, PETSC_DECIDE, nc11, nm3);
+        MatSetType(Mcm_block, MATDENSE);
+        MatSetUp(Mcm_block);
+        // M^cc : nc11 x nc11 constant colloid self-mobility (filled once in fill_self).
+        MatCreate(PETSC_COMM_SELF, &Mcc_block);
+        MatSetSizes(Mcc_block, PETSC_DECIDE, PETSC_DECIDE, nc11, nc11);
+        MatSetType(Mcc_block, MATDENSE);
+        MatSetUp(Mcc_block);
+        MatZeroEntries(Mcc_block);
     }
 
     void initialize_B(PetscInt nm3nc11, PetscInt nm3nc6){   

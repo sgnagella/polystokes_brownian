@@ -70,7 +70,15 @@ namespace arrays{
     extern Mat Pinv;
     extern Mat M;
     extern Mat B;
-    extern Mat A; 
+    extern Mat A;
+
+    // Arrowhead mobility pieces for the single-colloid / no-monomer-HI regime:
+    // M^mm = beta_inv*I (diagonal, not stored), M^cm = colloid<->monomer coupling
+    // (nc11 x nm3, rebuilt each step, O(N)), M^cc = colloid self-mobility (nc11 x nc11,
+    // constant). These are the mobility representation shared by the (matrix-free) saddle
+    // operator and the Brownian slip square root, so neither needs a dense grand mobility.
+    extern Mat Mcm_block;
+    extern Mat Mcc_block;
 
     extern Vec X;
     extern Vec Xd;
@@ -138,6 +146,7 @@ namespace arrays{
     // void initialize_Pinv(Petscint nm6nc17, PetscInt nm3nc11, PetscInt nm3nc6);
 
     void initialize_M(PetscInt nm3nc11);
+    void initialize_arrowhead(PetscInt nc11, PetscInt nm3);
 
     void initialize_B(PetscInt nm3nc11, PetscInt nm3nc6);
 

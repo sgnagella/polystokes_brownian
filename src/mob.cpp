@@ -376,6 +376,7 @@ void PolyStokes::fill_self(){
     int& ndim = consts.ndim;
     PetscInt& ndimp = consts.ndimp;
     PetscInt& nc3 = consts.nc3;
+    PetscInt& nm3 = consts.nm3;
     PetscInt& nm3nc6 = consts.nm3nc6;
     int& const5 = consts.const5;
     double& beta_inv = pinfo.beta_inv;
@@ -410,14 +411,20 @@ void PolyStokes::fill_self(){
         ph2 = ph1 + nc3;        // Rotational modes
         ph3 = nm3nc6 + const5 * (kk-Nm);     // Stress modes
 
+        // cm/cc local index = (global colloid DOF) - nm3
+        PetscInt cc1, cc2;
         for( ii = 0; ii < ndim; ii++){
             VALA = (PetscScalar)mob_a[ii][ii];
             IDX1 = ph1 + ii;
             ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+            cc1 = IDX1 - nm3;
+            ierr = MatSetValues(Mcc_block, 1, &cc1, 1, &cc1, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
             VALA = (PetscScalar)mob_c[ii][ii];
             IDX1 = ph2 + ii;
             ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+            cc1 = IDX1 - nm3;
+            ierr = MatSetValues(Mcc_block, 1, &cc1, 1, &cc1, &VALA, INSERT_VALUES); CHKERRV(ierr);
         }
 
         for( ii = 0; ii < const5; ii++ ){
@@ -426,10 +433,15 @@ void PolyStokes::fill_self(){
                 IDX1 = ph3 + ii;
                 IDX2 = ph3 + jj;
                 ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                cc1 = IDX1 - nm3;  cc2 = IDX2 - nm3;
+                ierr = MatSetValues(Mcc_block, 1, &cc1, 1, &cc2, &VALA, INSERT_VALUES); CHKERRV(ierr);
             }
         }
 
     }
+
+    ierr = MatAssemblyBegin(Mcc_block, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+    ierr = MatAssemblyEnd(Mcc_block, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
 
     return;
 }
@@ -441,19 +453,25 @@ void PolyStokes::mob(){
     // Outputs: None
     // Changeds: A
 
-    int idostep; 
+    int idostep;
     int ii, jj, kk, pidx;
     int ph1, ph2, ph3, ph4, ph5, ph6;
+    PetscInt cm_row;   // colloid-local row in M^cm (= global colloid DOF - nm3)
     int& Nm = pinfo.Nm;
     int& Np = pinfo.Np;
     int& ndim = consts.ndim;
     PetscInt& nc3 = consts.nc3;
+    PetscInt& nm3 = consts.nm3;
     PetscInt& nm3nc6 = consts.nm3nc6;
     int& const5 = consts.const5;
     int& npair_AA = pinfo.npair_AA;
     int& npair_AB = pinfo.npair_AB;
     int& npair_BB = pinfo.npair_BB;
-    PetscErrorCode ierr; 
+    PetscErrorCode ierr;
+
+    // Rebuild the colloid<->monomer coupling block M^cm from scratch each step
+    // (dual-written alongside A below, until the matrix-free saddle operator lands).
+    ierr = MatZeroEntries(Mcm_block); CHKERRV(ierr);
 
     initialize_rank2_array(mob_a);
     initialize_rank2_array(mob_b);
@@ -728,11 +746,13 @@ void PolyStokes::mob(){
                 
                 IDX1 = ph4 + ii;
                 IDX2 = ph1 + jj;
-                VALA = (PetscScalar)mob_b[ii][jj]; 
+                VALA = (PetscScalar)mob_b[ii][jj];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_b VALA " << VALA << std::endl;
                 ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                cm_row = IDX1 - nm3;   // colloid rotational row (M^cm)
+                ierr = MatSetValues(Mcm_block, 1, &cm_row, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
-                IDX1 = ph1 + ii; 
+                IDX1 = ph1 + ii;
                 IDX2 = ph4 + jj;
                 // std::cout<< "in AB_MC IDX2 " << IDX2 << std::endl;
                 VALA = (PetscScalar)mob_bt[ii][jj];
@@ -747,6 +767,8 @@ void PolyStokes::mob(){
                 VALA = (PetscScalar)mob_a[jj][ii];
                 // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_a VALA " << VALA << std::endl;
                 ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                cm_row = IDX1 - nm3;   // colloid translational row (M^cm)
+                ierr = MatSetValues(Mcm_block, 1, &cm_row, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
             }
 
             // velocity-stress couplings
@@ -758,6 +780,8 @@ void PolyStokes::mob(){
                 // std::cout << "in US_MC IDX2 " << IDX2 << std::endl;
                 ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
                 ierr = MatSetValues(A, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                cm_row = IDX2 - nm3;   // colloid stresslet row (M^cm)
+                ierr = MatSetValues(Mcm_block, 1, &cm_row, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
                 // No stresses on the monomers, so no need to populate the symmetric terms
             }
         }
@@ -896,6 +920,30 @@ void PolyStokes::mob(){
     // sub-blocks needed for the Brownian slip are read back via views of A.
     ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
     ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+
+    // The standalone M^cm coupling block was dual-written above; assemble it.
+    ierr = MatAssemblyBegin(Mcm_block, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+    ierr = MatAssemblyEnd(Mcm_block, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+
+#ifdef ARROWHEAD_CHECK
+    // One-time correctness check: the directly-assembled M^cm must equal A's colloid
+    // rows x monomer cols block (A[nm3:nm3nc11, 0:nm3]).
+    {
+        static bool checked = false;
+        if( !checked ){
+            checked = true;
+            Mat vcm; PetscReal nrm;
+            ierr = MatDenseGetSubMatrix(A, nm3, consts.nm3nc11, 0, nm3, &vcm); CHKERRV(ierr);
+            Mat diff;
+            ierr = MatDuplicate(vcm, MAT_COPY_VALUES, &diff); CHKERRV(ierr);
+            ierr = MatAXPY(diff, -1.0, Mcm_block, SAME_NONZERO_PATTERN); CHKERRV(ierr);
+            ierr = MatNorm(diff, NORM_FROBENIUS, &nrm); CHKERRV(ierr);
+            PetscPrintf(PETSC_COMM_WORLD, "[arrowhead-check] ||Mcm_block - A_view||_F = %.3e\n", (double)nrm);
+            ierr = MatDestroy(&diff); CHKERRV(ierr);
+            ierr = MatDenseRestoreSubMatrix(A, &vcm); CHKERRV(ierr);
+        }
+    }
+#endif
 
     // View the matrix
     // MatView(M, PETSC_VIEWER_STDOUT_SELF);

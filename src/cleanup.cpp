@@ -26,6 +26,10 @@ void PolyStokes::cleanup(){
     // Schur-complement workspace (only built when kT > 0 && !mm_HI)
     if (Smat) { ierr = MatDestroy(&Smat); CHKERRV(ierr); }
 
+    // Arrowhead mobility pieces
+    if (Mcm_block) { ierr = MatDestroy(&Mcm_block); CHKERRV(ierr); }
+    if (Mcc_block) { ierr = MatDestroy(&Mcc_block); CHKERRV(ierr); }
+
     PetscBool petsc_initialized, petsc_finalized;
     PetscInitialized(&petsc_initialized);
     PetscFinalized(&petsc_finalized);

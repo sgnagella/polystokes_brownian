@@ -117,23 +117,14 @@ void PolyStokes::build_slip_vel_schur(){
     // Lanczos matvec and the dense path use them freely (MatDenseGetSubMatrix only
     // checks out one view at a time). The copy is O(nc11 nm3) -- at most one Lanczos
     // matvec -- so it is negligible next to either sqrt path.
-    // The grand mobility lives in the top-left [0, nm3nc11) block of A, so the colloid
-    // sub-blocks are M^cm = A[nm3:nm3nc11, 0:nm3] and M^cc = A[nm3:nm3nc11, nm3:nm3nc11].
-    Mat Mcm, Bcm, Mcc, Ccc;
-    ierr = MatDenseGetSubMatrix(A, nm3, nm3nc11, 0, nm3, &Mcm); CHKERRV(ierr);
-
+    // The colloid sub-blocks are the standalone arrowhead mobility pieces (assembled in
+    // mob()/fill_self), independent of how the saddle operator A is represented:
+    //   M^cm = Mcm_block (nc11 x nm3, rebuilt each step), M^cc = Mcc_block (nc11 x nc11, const).
     // Cross term: uc = sqrt(beta) * (M^cm xi_m).
     Vec uc;
     ierr = VecCreateSeq(PETSC_COMM_SELF, nc11, &uc); CHKERRV(ierr);
-    ierr = MatMult(Mcm, xi_m, uc); CHKERRV(ierr);
+    ierr = MatMult(Mcm_block, xi_m, uc); CHKERRV(ierr);
     ierr = VecScale(uc, PetscSqrtReal(beta)); CHKERRV(ierr);
-
-    ierr = MatDuplicate(Mcm, MAT_COPY_VALUES, &Bcm); CHKERRV(ierr);
-    ierr = MatDenseRestoreSubMatrix(A, &Mcm); CHKERRV(ierr);
-
-    ierr = MatDenseGetSubMatrix(A, nm3, nm3nc11, nm3, nm3nc11, &Mcc); CHKERRV(ierr);
-    ierr = MatDuplicate(Mcc, MAT_COPY_VALUES, &Ccc); CHKERRV(ierr);
-    ierr = MatDenseRestoreSubMatrix(A, &Mcc); CHKERRV(ierr);
 
     // Add S^{1/2} xi_c onto uc, where S = M^cc - beta M^cm M^mc = Ccc - beta Bcm Bcm^T.
     // Both routes floor negative eigenvalues to zero (the truncated far-field mobility
@@ -148,15 +139,15 @@ void PolyStokes::build_slip_vel_schur(){
     { const char *e = std::getenv("POLYSTOKES_LANCZOS_NC"); if (e) lanczos_threshold = atoi(e); }
 
     if (nc11 > lanczos_threshold) {
-        schur_sqrt_lanczos(Bcm, Ccc, beta, xi_c, uc, /*kmax=*/40);
+        schur_sqrt_lanczos(Mcm_block, Mcc_block, beta, xi_c, uc, /*kmax=*/40);
     }
     else {
-        // Dense path: S = Ccc - beta Bcm Bcm^T into the persistent workspace Smat,
+        // Dense path: S = M^cc - beta M^cm M^mc into the persistent workspace Smat,
         //   S = Q diag(lambda) Q^T,  S^{1/2} xi_c = Q diag(sqrt(max(lambda,0))) Q^T xi_c.
         Mat P;
-        ierr = MatMatTransposeMult(Bcm, Bcm, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &P); CHKERRV(ierr);
+        ierr = MatMatTransposeMult(Mcm_block, Mcm_block, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &P); CHKERRV(ierr);
         ierr = MatScale(P, -beta); CHKERRV(ierr);
-        ierr = MatAXPY(P, 1.0, Ccc, SAME_NONZERO_PATTERN); CHKERRV(ierr);
+        ierr = MatAXPY(P, 1.0, Mcc_block, SAME_NONZERO_PATTERN); CHKERRV(ierr);
         ierr = MatCopy(P, Smat, SAME_NONZERO_PATTERN); CHKERRV(ierr);
         ierr = MatDestroy(&P); CHKERRV(ierr);
 
@@ -215,8 +206,7 @@ void PolyStokes::build_slip_vel_schur(){
         }
     }
 
-    ierr = MatDestroy(&Bcm); CHKERRV(ierr);
-    ierr = MatDestroy(&Ccc); CHKERRV(ierr);
+    // Mcm_block / Mcc_block are persistent (owned by arrays); do not destroy here.
 
     // Assemble W = [ sqrt(beta_inv) * xi_m ; uc ].
     {

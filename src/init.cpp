@@ -124,6 +124,8 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts){
 
     std::cout << "PETSC arrays ..." << std::endl;
     // No separate grand mobility M: it is assembled directly into A's top-left block.
+    // Arrowhead mobility pieces (M^cm, M^cc) shared by the saddle operator and the sqrt.
+    initialize_arrowhead(consts.nc11, consts.nm3);
     initialize_B(consts.nm3nc11, consts.nm3nc6);
     std::cout << "A" << std::endl;
     initialize_A(consts.nm6nc17, consts.nm3nc11, consts.nm3nc6);
