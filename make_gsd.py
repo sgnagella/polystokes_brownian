@@ -118,5 +118,6 @@ def main(beta=1, data_save_dir=None):
 
 if __name__ == '__main__':
     beta = 0.1
-    data_save_dir = f'data/dumbbells_thermal_beta_{beta}'
+    fene = False
+    data_save_dir = f'data/dumbbells_thermal_beta_{beta}_fene_{fene}'
     main(beta=beta, data_save_dir=data_save_dir)

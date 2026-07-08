@@ -319,7 +319,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
     if samplerate is None:
         samplerate = int(1 / dt)               # sample every 1/dt timesteps
 
-    N_dumbbell = 50
+    N_dumbbell = 200
     N_mono = 2                                  # 2-bead dumbbells
     N_trapped = 1                              # single trapped colloid
     N_mono_total = N_dumbbell * N_mono
@@ -328,16 +328,16 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
     # Bond / interaction parameters
     r0 = 2.0 * beta                            # bond rest length (small)
     kbond = 1.0
-    Lmax = 10 * r0                             # unused (harmonic), kept for the API
+    Lmax = 1.5*r0                             # unused (harmonic), kept for the API
     tau = 1000
     kT = 1.0
     epsilon = 1.0                              # WCA excluded-volume energy scale
     ktrap = 10                                # harmonic trap holding the colloid at the origin
-
+    fene = False
     conf = build_initial_config(N_dumbbell, r0, box=box)
     bond_ids = build_bond_ids(N_dumbbell)
 
-    data_save_dir = f'data/dumbbells_thermal_beta_{beta}'
+    data_save_dir = f'data/dumbbells_thermal_beta_{beta}_fene_{fene}'
     data_config_dir = os.path.join(data_save_dir, 'config')
     if run:
         if os.path.exists(data_config_dir):
@@ -357,7 +357,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
             dt, samplerate, tmax, data_config_dir,
             mm_HI=False,       # monomer-monomer HI off
             chain_HI=False,
-            fene=False,        # harmonic bonds
+            fene=fene,        # harmonic bonds
             record_forces=False,
             tether=False,      # free dumbbells (NOT tethered to the colloid)
             box=box,           # None => unbounded; [Lx,Ly,Lz] => periodic
@@ -381,6 +381,6 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
 
 
 if __name__ == "__main__":
-    dt = 0.0005
-    samplerate = 2; int(1/dt) # sample on brownian timescale of colloid
-    main(dt=dt, samplerate=samplerate, tmax=0.5, box=[8,8,8])
+    dt = 0.0001
+    samplerate = 10; int(1/dt) # sample on brownian timescale of colloid
+    main(dt=dt, samplerate=samplerate, tmax=50.0, box=[20,20,20])

@@ -56,6 +56,10 @@ void trapping_forces(PetscScalar fext[], Consts& consts, Coeffs& coeffs, Particl
     PetscInt& ndimp = consts.ndimp;
     double& ktrap = trapinfo.ktrap;
 
+    if (std::abs(ktrap) < 1e-12){
+        return;
+    }
+
     if (t> trapinfo.tstop and trapinfo.weaken_trap >=0){
         ktrap = trapinfo.weaken_trap;
     }
