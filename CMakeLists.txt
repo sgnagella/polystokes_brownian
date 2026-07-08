@@ -69,6 +69,7 @@ set(SOURCES
     src/check_dist.cpp
     src/multi_arrays_initialize.cpp
     src/mob.cpp
+    src/matfree_A.cpp
     src/rhs.cpp
     src/drift.cpp
     src/slip_vel.cpp

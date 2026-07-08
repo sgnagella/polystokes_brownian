@@ -384,4 +384,4 @@ if __name__ == "__main__":
     dt = 0.0001
     samplerate = 10; int(1/dt) # sample on brownian timescale of colloid
     beta = 0.1
-    main(beta=beta, dt=dt, samplerate=samplerate, tmax=0.5, box=[20,20,20])
+    main(beta=beta, dt=dt, samplerate=samplerate, tmax=1.0, box=[20,20,20])

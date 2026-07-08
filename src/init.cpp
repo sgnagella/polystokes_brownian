@@ -94,7 +94,7 @@ void PolyStokes::init_random(unsigned int seed){
     return;
 }
 
-void alok_arrays(ParticleInfo& pinfo, Consts& consts){
+void alok_arrays(ParticleInfo& pinfo, Consts& consts, bool mm_HI){
     // Allocate memory for array operations
 
     // TODO: Change x and x_0 to be size n6 and correct the indexing elsewhere
@@ -128,7 +128,15 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts){
     initialize_arrowhead(consts.nc11, consts.nm3);
     initialize_B(consts.nm3nc11, consts.nm3nc6);
     std::cout << "A" << std::endl;
-    initialize_A(consts.nm6nc17, consts.nm3nc11, consts.nm3nc6);
+    if( mm_HI ){
+        // Dense saddle matrix (monomer-monomer HI fills the full top-left block).
+        initialize_A(consts.nm6nc17, consts.nm3nc11, consts.nm3nc6);
+    }
+    else {
+        // Matrix-free saddle operator using the arrowhead mobility pieces (O(N)).
+        initialize_A_shell(consts.nm6nc17, consts.nm3nc11, consts.nm3nc6,
+                           consts.nm3, consts.nc11, pinfo.Nc, pinfo.beta_inv);
+    }
     std::cout << "rhs" << std::endl;
     initialize_rhs(consts.nm6nc17);
     std::cout << "X" << std::endl;
@@ -310,7 +318,7 @@ void PolyStokes::init(){
     PC pc;
 
     std::cout << "Allocating memory..." << std::endl;
-    alok_arrays(pinfo, consts);
+    alok_arrays(pinfo, consts, mm_HI);
 
     std::cout << "Setting vars..." << std::endl;
     set_vars(pinfo, dataStruct, consts, tether);

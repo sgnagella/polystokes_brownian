@@ -392,15 +392,19 @@ void PolyStokes::fill_self(){
 
     // Fill the self mobility terms
     mobility( 0., 0. , 0. , 0. , 0. , true );
-    // Fill in the monomers self-contribution (F)
-    for( kk = 0; kk < Nm; kk++){
-        ph1 = ndimp * kk; 
-        ph2 = ph1 + ndimp; 
-        
-        for( ii = 0; ii < ndim; ii++){
-            VALA = beta_inv * (PetscScalar)mob_a[ii][ii]; 
-            IDX1 = ph1 + ii; 
-            ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+    // Fill in the monomers self-contribution (F). Only needed for the dense A; in the
+    // matrix-free (mm_HI==false) path the monomer self-mobility is the scalar beta_inv
+    // applied inside the shell, so nothing is stored here.
+    if( mm_HI ){
+        for( kk = 0; kk < Nm; kk++){
+            ph1 = ndimp * kk;
+            ph2 = ph1 + ndimp;
+
+            for( ii = 0; ii < ndim; ii++){
+                VALA = beta_inv * (PetscScalar)mob_a[ii][ii];
+                IDX1 = ph1 + ii;
+                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+            }
         }
     }
 
@@ -412,19 +416,21 @@ void PolyStokes::fill_self(){
         ph3 = nm3nc6 + const5 * (kk-Nm);     // Stress modes
 
         // cm/cc local index = (global colloid DOF) - nm3
+        // Colloid self mobility: goes into M^cc (Mcc_block) always, and additionally into
+        // the dense A only on the mm_HI path (the shell reads Mcc_block directly).
         PetscInt cc1, cc2;
         for( ii = 0; ii < ndim; ii++){
             VALA = (PetscScalar)mob_a[ii][ii];
             IDX1 = ph1 + ii;
-            ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
             cc1 = IDX1 - nm3;
             ierr = MatSetValues(Mcc_block, 1, &cc1, 1, &cc1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+            if( mm_HI ){ ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr); }
 
             VALA = (PetscScalar)mob_c[ii][ii];
             IDX1 = ph2 + ii;
-            ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
             cc1 = IDX1 - nm3;
             ierr = MatSetValues(Mcc_block, 1, &cc1, 1, &cc1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+            if( mm_HI ){ ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr); }
         }
 
         for( ii = 0; ii < const5; ii++ ){
@@ -432,9 +438,9 @@ void PolyStokes::fill_self(){
                 VALA = (PetscScalar)mob_m[ii][jj];
                 IDX1 = ph3 + ii;
                 IDX2 = ph3 + jj;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
                 cc1 = IDX1 - nm3;  cc2 = IDX2 - nm3;
                 ierr = MatSetValues(Mcc_block, 1, &cc1, 1, &cc2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                if( mm_HI ){ ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr); }
             }
         }
 
@@ -741,14 +747,13 @@ void PolyStokes::mob(){
                 IDX1 = ph1 + ii;
                 IDX2 = ph2 + jj;
                 VALA = (PetscScalar)mob_a[ii][jj];
-                // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_a VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
-                
+                // M^mc (monomer row, colloid col): dense A only; shell uses Mcm_block^T
+                if( mm_HI ){ ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr); }
+
                 IDX1 = ph4 + ii;
                 IDX2 = ph1 + jj;
                 VALA = (PetscScalar)mob_b[ii][jj];
-                // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_b VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                if( mm_HI ){ ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr); }
                 cm_row = IDX1 - nm3;   // colloid rotational row (M^cm)
                 ierr = MatSetValues(Mcm_block, 1, &cm_row, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
 
@@ -756,8 +761,7 @@ void PolyStokes::mob(){
                 IDX2 = ph4 + jj;
                 // std::cout<< "in AB_MC IDX2 " << IDX2 << std::endl;
                 VALA = (PetscScalar)mob_bt[ii][jj];
-                // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_bt VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                if( mm_HI ){ ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr); }
 
                 // Symmetric contributions
                 // Only have force-velocity coupling
@@ -765,8 +769,7 @@ void PolyStokes::mob(){
                 IDX1 = ph2 + ii;
                 IDX2 = ph1 + jj;
                 VALA = (PetscScalar)mob_a[jj][ii];
-                // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_a VALA " << VALA << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                if( mm_HI ){ ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr); }
                 cm_row = IDX1 - nm3;   // colloid translational row (M^cm)
                 ierr = MatSetValues(Mcm_block, 1, &cm_row, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
             }
@@ -776,10 +779,10 @@ void PolyStokes::mob(){
                 IDX1 = ph1 + ii;
                 IDX2 = ph6 + jj;
                 VALA = (PetscScalar)mob_gt[ii][jj];
-                // std::cout << "IDX1 " << IDX1 << " IDX2 " << IDX2 << " mob_gt VALA " << VALA << std::endl;
-                // std::cout << "in US_MC IDX2 " << IDX2 << std::endl;
-                ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
-                ierr = MatSetValues(A, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                if( mm_HI ){
+                    ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                    ierr = MatSetValues(A, 1, &IDX2, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                }
                 cm_row = IDX2 - nm3;   // colloid stresslet row (M^cm)
                 ierr = MatSetValues(Mcm_block, 1, &cm_row, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr);
                 // No stresses on the monomers, so no need to populate the symmetric terms
@@ -915,11 +918,13 @@ void PolyStokes::mob(){
     // ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
     // ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
 
-    // The grand mobility is written directly into the top-left [0, nm3nc11) block
-    // of the saddle matrix A (no separate M, no per-step O(N^2) copy). The colloid
-    // sub-blocks needed for the Brownian slip are read back via views of A.
-    ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
-    ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+    // On the mm_HI path the grand mobility is written into A's top-left [0, nm3nc11)
+    // block; assemble it. On the matrix-free path A is a shell (no stored values), so
+    // only the arrowhead blocks below are assembled.
+    if( mm_HI ){
+        ierr = MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+        ierr = MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+    }
 
     // The standalone M^cm coupling block was dual-written above; assemble it.
     ierr = MatAssemblyBegin(Mcm_block, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);

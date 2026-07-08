@@ -151,6 +151,8 @@ namespace arrays{
     void initialize_B(PetscInt nm3nc11, PetscInt nm3nc6);
 
     void initialize_A(PetscInt nm6nc17, PetscInt nm3nc11, PetscInt nm3nc6);
+    void initialize_A_shell(PetscInt nm6nc17, PetscInt nm3nc11, PetscInt nm3nc6,
+                            PetscInt nm3, PetscInt nc11, PetscInt Nc, PetscReal beta_inv);
 
     void initialize_X(PetscInt nm6nc17);
 
