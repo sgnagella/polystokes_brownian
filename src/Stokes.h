@@ -79,6 +79,11 @@ private:
     void check_dist();
     void RHS(bool drift=false);
     void mobility(double dr, double dr_inv, double dx, double dy, double dz, bool self, bool AB, bool AA);
+    // Thread-safe monomer-colloid (AB) pair mobility: writes only to the passed buffers
+    // (no global temporaries), so it can be called from an OpenMP-parallel AB loop.
+    void mobility_AB(double dr, double dr_inv, double dx, double dy, double dz,
+                     rank2_array& mob_a, rank2_array& mob_b,
+                     rank2_array& mob_bt, rank2_array& mob_gt) const;
     void fill_self();
     void mob();
     void drift();

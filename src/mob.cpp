@@ -86,9 +86,16 @@ void PolyStokes::mobility(
     }
 
     else{
+        // Monomer-colloid pair: delegate to the thread-safe routine (writes the global
+        // mob_* temporaries here for the serial callers) and return.
+        if( AB ){
+            mobility_AB(dr, dr_inv, dx, dy, dz, mob_a, mob_b, mob_bt, mob_gt);
+            return;
+        }
+
         // Determine the pair contribution
-        // Create vector to store dx dy dz 
-        std::vector<double> e = {dx , dy , dz};  
+        // Create vector to store dx dy dz
+        std::vector<double> e = {dx , dy , dz};
 
         double& beta2 = pinfo.beta2;
 
@@ -362,6 +369,80 @@ void PolyStokes::mobility(
     return;
 }
 
+void PolyStokes::mobility_AB(double dr, double dr_inv, double dx, double dy, double dz,
+                             rank2_array& mob_a, rank2_array& mob_b,
+                             rank2_array& mob_bt, rank2_array& mob_gt) const
+{
+    // Thread-safe far-field monomer-colloid (AB) pair mobility. Reads only const state
+    // (pinfo.beta2, coeffs, and the file-scope constant tensors delta/eps set once in mob())
+    // and writes only the four output buffers, using stack-local intermediates -- so multiple
+    // threads can call it concurrently with per-thread output buffers. Physics is identical
+    // to the AB path of mobility().
+    const int ndim   = consts.ndim;
+    const int const5 = consts.const5;
+    const double beta2 = pinfo.beta2;
+
+    const double e[3] = { dx, dy, dz };
+    double ee[3][3];
+    for(int ii = 0; ii < ndim; ii++){
+        ee[ii][ii] = e[ii] * e[ii];
+        for(int jj = ii + 1; jj < ndim; jj++){
+            ee[ii][jj] = e[ii] * e[jj];
+            ee[jj][ii] = ee[ii][jj];
+        }
+    }
+
+    const double dr_inv2 = dr_inv * dr_inv;
+    const double dr_inv3 = dr_inv2 * dr_inv;
+    const double dr_inv4 = dr_inv3 * dr_inv;
+
+    // Translation-force coupling (AB)
+    const double x12a = dr_inv - coeffs.c1d2 * beta2 * dr_inv3;
+    const double y12a = coeffs.c1d2 * x12a;
+    for(int ii = 0; ii < ndim; ii++){
+        mob_a[ii][ii] = x12a * ee[ii][ii] + y12a * (1. - ee[ii][ii]);
+        for(int jj = ii + 1; jj < ndim; jj++){
+            mob_a[ii][jj] = x12a * ee[ii][jj] - y12a * ee[ii][jj];
+            mob_a[jj][ii] = mob_a[ii][jj];
+        }
+    }
+
+    // Rotation-force coupling
+    const double y12b = -coeffs.c3d4 * dr_inv2;
+    // Translation-stress coupling (AB)
+    const double x12g = coeffs.c9d4 * dr_inv2 - coeffs.c9d20 * dr_inv4 * (ndim + const5 * beta2);
+    const double y12g = coeffs.c9d10 * dr_inv4 * (coeffs.c1d2 + coeffs.c5d6 * beta2);
+
+    // Translation-torque
+    for(int ii = 0; ii < ndim; ii++){
+        for(int jj = 0; jj < ndim; jj++){
+            int kk = ndim - ii - jj;
+            if( kk == -1 ){ kk = 2; }
+            if( kk ==  3 ){ kk = 0; }
+            mob_b[ii][jj] = y12b * eps[ii][jj][kk] * e[kk];
+            mob_bt[jj][ii] = mob_b[ii][jj];
+        }
+    }
+
+    // Translation-stress (rank-3), then flatten to the symmetric 2nd-rank mob_gt
+    double gt[3][3][3];
+    for(int kk = 0; kk < ndim; kk++){
+        for(int ii = 0; ii < ndim; ii++){
+            for(int jj = 0; jj < ndim; jj++){
+                gt[kk][ii][jj] = -x12g * ( ee[ii][jj] - coeffs.c1d3 * delta[ii][jj] ) * e[kk]
+                    + y12g * ( e[ii] * delta[jj][kk] + e[jj] * delta[ii][kk] - 2. * ee[ii][jj] * e[kk] );
+            }
+        }
+    }
+    for(int ii = 0; ii < ndim; ii++){
+        mob_gt[ii][0] = gt[ii][0][0] - gt[ii][2][2];
+        mob_gt[ii][1] = 2. * gt[ii][0][1];
+        mob_gt[ii][2] = 2. * gt[ii][0][2];
+        mob_gt[ii][3] = 2. * gt[ii][1][2];
+        mob_gt[ii][4] = gt[ii][1][1] - gt[ii][2][2];
+    }
+}
+
 void PolyStokes::fill_self(){
     // This routines fills the self-mobility terms of the grand mobility matrix
     // These are independent of the pair separations and can be done once at the beginning of the simulation
@@ -468,6 +549,7 @@ void PolyStokes::mob(){
     int& ndim = consts.ndim;
     PetscInt& nc3 = consts.nc3;
     PetscInt& nm3 = consts.nm3;
+    PetscInt& nc11 = consts.nc11;
     PetscInt& nm3nc6 = consts.nm3nc6;
     int& const5 = consts.const5;
     int& npair_AA = pinfo.npair_AA;
@@ -714,11 +796,12 @@ void PolyStokes::mob(){
         }
     }
     
-    // Monomer-colloid interactions
+    // Monomer-colloid interactions. Dense-A path: serial (writes A + Mcm_block via MatSetValues).
+    if( mm_HI )
     for( kk = 0; kk < npair_AB ; kk++){
         pidx = id_AB[kk];
         // Compute the mobilities for each particle pair
-        mobility( pd[3][pidx], pd[4][pidx] , pd[0][pidx] , pd[1][pidx] , pd[2][pidx] , false, true, false); 
+        mobility( pd[3][pidx], pd[4][pidx] , pd[0][pidx] , pd[1][pidx] , pd[2][pidx] , false, true, false);
         
         ph1 = id[0][pidx]; // monomer index
         ph2 = id[1][pidx]; // colloid index
@@ -788,6 +871,35 @@ void PolyStokes::mob(){
                 // No stresses on the monomers, so no need to populate the symmetric terms
             }
         }
+    }
+    else {
+        // Matrix-free path: assemble only M^cm (Mcm_block), serially, via the thread-safe
+        // helper and direct writes into the dense array (avoids per-entry MatSetValues).
+        PetscScalar *cm;
+        ierr = MatDenseGetArray(Mcm_block, &cm); CHKERRV(ierr);   // column-major, lda = nc11
+        rank2_array la(boost::extents[ndim][ndim]);
+        rank2_array lb(boost::extents[ndim][ndim]);
+        rank2_array lbt(boost::extents[ndim][ndim]);
+        rank2_array lgt(boost::extents[ndim][const5]);
+        for( int kp = 0; kp < npair_AB; kp++){
+            int p = id_AB[kp];
+            mobility_AB( pd[3][p], pd[4][p], pd[0][p], pd[1][p], pd[2][p], la, lb, lbt, lgt );
+            int cph1 = ndim * id[0][p];                  // monomer translational base (columns)
+            int c    = id[1][p];                         // colloid index
+            int cph2 = ndim * c;                         // colloid translational base (rows)
+            int cph4 = cph2 + nc3;                        // colloid rotational base
+            int cph6 = const5 * ( c - Nm ) + nm3nc6;      // colloid stresslet base
+            for( int ii = 0; ii < ndim; ii++){
+                for( int jj = 0; jj < ndim; jj++){
+                    cm[ (cph2 + ii - nm3) + (cph1 + jj) * nc11 ] = (PetscScalar)la[jj][ii];   // trans
+                    cm[ (cph4 + ii - nm3) + (cph1 + jj) * nc11 ] = (PetscScalar)lb[ii][jj];   // rot
+                }
+                for( int jj = 0; jj < const5; jj++){
+                    cm[ (cph6 + jj - nm3) + (cph1 + ii) * nc11 ] = (PetscScalar)lgt[ii][jj];  // stress
+                }
+            }
+        }
+        ierr = MatDenseRestoreArray(Mcm_block, &cm); CHKERRV(ierr);
     }
 
     for( kk = 0; kk < npair_BB; kk++){
