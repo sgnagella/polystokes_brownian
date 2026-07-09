@@ -20,9 +20,9 @@ void PolyStokes::check_dist(){
     for(ii = start; ii < pinfo.npair; ii++){
 
         // Ignore dist checks if we are neglect monomer-monomer HI
-        if( !mm_HI && ii < kk_AB ){
-            continue;
-        }
+        // if( !mm_HI && ii < kk_AB ){
+        //     continue;
+        // }
 
         kk = id[0][ii]; 
         jj = id[1][ii];

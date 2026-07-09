@@ -319,7 +319,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
     if samplerate is None:
         samplerate = int(1 / dt)               # sample every 1/dt timesteps
 
-    N_dumbbell = 200
+    N_dumbbell = 1000
     N_mono = 2                                  # 2-bead dumbbells
     N_trapped = 1                              # single trapped colloid
     N_mono_total = N_dumbbell * N_mono
@@ -331,7 +331,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
     Lmax = 1.5*r0                             # unused (harmonic), kept for the API
     tau = 1000
     kT = 1.0
-    epsilon = 1.0                              # WCA excluded-volume energy scale
+    epsilon = 5.0                              # WCA excluded-volume energy scale
     ktrap = 10                                # harmonic trap holding the colloid at the origin
     fene = False
     conf = build_initial_config(N_dumbbell, r0, box=box)
@@ -384,4 +384,4 @@ if __name__ == "__main__":
     dt = 0.0001
     samplerate = 10; int(1/dt) # sample on brownian timescale of colloid
     beta = 0.1
-    main(beta=beta, dt=dt, samplerate=samplerate, tmax=1.0, box=[20,20,20])
+    main(beta=beta, dt=dt, samplerate=samplerate, tmax=25.0, box=[50,50,50])
