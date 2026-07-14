@@ -44,13 +44,13 @@ PYBIND11_MODULE(PolyStokes, m) {
         // Factory lambda so `box` can be None (no PBC) or a 3-element list [Lx,Ly,Lz].
         .def(py::init([](double dt, int samplerate, double tmax, std::string output_dir,
                          bool mm_HI, bool chain_HI, bool fene, bool record_forces, bool tether,
-                         py::object box, double t) {
+                         bool mono_ev, py::object box, double t) {
                  std::vector<double> box_lengths;
                  if (!box.is_none()) {
                      box_lengths = box.cast<std::vector<double>>();
                  }
                  return new PolyStokes(dt, samplerate, tmax, output_dir, mm_HI, chain_HI,
-                                       fene, record_forces, tether, box_lengths, t);
+                                       fene, record_forces, tether, mono_ev, box_lengths, t);
              }),
              py::arg("dt"),
              py::arg("samplerate"),
@@ -61,6 +61,7 @@ PYBIND11_MODULE(PolyStokes, m) {
              py::arg("fene")=true,
              py::arg("record_forces")=true,
              py::arg("tether")=false,
+             py::arg("mono_ev")=false,
              py::arg("box")=py::none(),
              py::arg("t")=0.0)
         .def("initial_configuration", &PolyStokes::initial_configuration, 

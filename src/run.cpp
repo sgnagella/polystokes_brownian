@@ -71,13 +71,17 @@ void PolyStokes::run(){
         // std::cout << "Checking pairwise distances..." << std::endl;
         check_dist();
 
+        // Monomer-monomer (AA) neighbor search via the cell list, used for excluded
+        // volume when mm_HI is off (check_dist then only handles AB/BB). Built here, on
+        // the just-wrapped positions, at the same cadence as check_dist; consumed by
+        // monomer_wca() inside RHS().
+        if( !mm_HI && mono_ev ){
+            build_monomer_cell_list();
+        }
+
         // Construct RHS and correct for any overlaps
         // std::cout << "Computing RHS" << std::endl;
         RHS();
-        
-        // Compute the cell list
-        // std::cout << "Computing the cell list..." << std::endl;
-        // compute_cell_list();
 
         // std::cout << "Computing the mobility matrix..." << std::endl;
         // Compute the grand mobility matrix and insert to saddle point matrix

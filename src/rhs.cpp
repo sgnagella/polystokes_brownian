@@ -184,7 +184,13 @@ void PolyStokes::RHS(bool drift){
 
     std::fill(fint, fint + nm3nc3, 0.0);
     
-    pair_interaction(fint, consts, pinfo, dataStruct);
+    pair_interaction(fint, consts, pinfo, dataStruct, mono_ev);
+    // Monomer-monomer (AA) excluded volume via the cell list. Only in the mm_HI==false
+    // path -- when mm_HI is on, AA pairs are enumerated into vlist and handled by
+    // pair_interaction above. The cell list is (re)built once per step in run().
+    if( !mm_HI && mono_ev ){
+        monomer_wca(fint);
+    }
     trapping_forces(fint, consts, coeffs, pinfo, trapinfo, timeinfo.t, box);
     bond_forces(fint, consts, pinfo, fene, box);
 

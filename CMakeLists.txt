@@ -78,6 +78,7 @@ set(SOURCES
     src/write_configuration.cpp
     src/quat.cpp
     src/pair_interaction.cpp
+    src/cell_list.cpp
     src/box.cpp
     src/cleanup.cpp
     src/bindings.cpp

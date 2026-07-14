@@ -16,6 +16,8 @@ struct ParticleInfo{
     int npair_AA;
     int npair_AB;
     int npair_BB;
+    int npair_stored;   // pairs actually stored in pd/id/pair_types: npair when mm_HI,
+                        // else npair_AB + npair_BB (AA handled by the monomer cell list)
     int Npoly;
     int nbonds;
     int nbonds_per_poly;

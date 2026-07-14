@@ -110,14 +110,20 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts, bool mm_HI){
     // initialize_q( consts.nc4 );
     
     std::cout << "Bookeeping arrays..." << std::endl;
-    initialize_pd( consts.pd_rows, pinfo.npair); 
-    initialize_id( consts.id_rows, pinfo.npair);
-    initialize_pair_types( pinfo.npair );
+    // Store only the pairs that are actually needed as pair records: all pairs when
+    // mm_HI, else AB + BB only (AA monomer-monomer pairs go through the cell list).
+    initialize_pd( consts.pd_rows, pinfo.npair_stored);
+    initialize_id( consts.id_rows, pinfo.npair_stored);
+    initialize_pair_types( pinfo.npair_stored );
     initialize_vlist(pinfo.Np-1);
     initialize_bond_list(pinfo.Np, pinfo.nbonds);
     initialize_chainid(pinfo.Nm);
-    initialize_id_AA( pinfo.npair_AA , consts.id_rows); 
-    initialize_id_AB( pinfo.npair_AB ); 
+    // id_AA is read only by the mm_HI monomer-monomer HI loop; skip its (~3 GB at
+    // Nm=12000) allocation when mm_HI is off.
+    if( mm_HI ){
+        initialize_id_AA( pinfo.npair_AA , consts.id_rows);
+    }
+    initialize_id_AB( pinfo.npair_AB );
     initialize_id_BB( pinfo.npair_BB );
     initialize_bondid( consts.id_rows, pinfo.nbonds); 
     initialize_mesid( consts.id_rows, consts.const5);
@@ -149,7 +155,7 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts, bool mm_HI){
     return;
 }
 
-void set_vars(ParticleInfo& pinfo, Data& dataStruct, Consts& consts, bool tether){
+void set_vars(ParticleInfo& pinfo, Data& dataStruct, Consts& consts, bool tether, bool mm_HI){
     // Define other useful variables for the calculations
     int ii, jj, kk, kk_AA, kk_AB, pidx; 
 
@@ -188,47 +194,73 @@ void set_vars(ParticleInfo& pinfo, Data& dataStruct, Consts& consts, bool tether
     }
 
     std::cout << "Setting up particle pairs..." << std::endl;
-    kk = 0; 
-    // 2nd index on id_AA records whether the pair belongs to the same chain
-    for(ii = 0; ii < Nm; ii++){
-        for(jj = ii+1; jj < Nm; jj++){
-            id[0][kk] = ii; 
-            id[1][kk] = jj; 
-            id_AA[kk][0] = kk; 
-
-            if(chain_ids[ii] == chain_ids[jj]){
-                id_AA[kk][1] = 1;
+    kk = 0;
+    if( mm_HI ){
+        // Full enumeration: AA (monomer-monomer) first, then AB, then BB. For AA the
+        // global pair index equals the id_AA row index; id_AB/id_BB store global indices.
+        // 2nd index on id_AA records whether the pair belongs to the same chain.
+        for(ii = 0; ii < Nm; ii++){
+            for(jj = ii+1; jj < Nm; jj++){
+                id[0][kk] = ii;
+                id[1][kk] = jj;
+                id_AA[kk][0] = kk;
+                if(chain_ids[ii] == chain_ids[jj]){
+                    id_AA[kk][1] = 1;
+                }
+                kk += 1;
             }
-
-            kk += 1;
+        }
+        kk_AA = kk;
+        for(ii = 0; ii < Nm; ii++){
+            for(jj = Nm; jj < Np; jj++){
+                id[0][kk] = ii;
+                id[1][kk] = jj;
+                pair_types[kk] = 1;
+                id_AB[kk-kk_AA] = kk;
+                kk += 1;
+            }
+        }
+        kk_AB = kk;
+        for(ii = Nm; ii < Np; ii++){
+            for(jj = ii+1; jj < Np; jj++){
+                id[0][kk] = ii;
+                id[1][kk] = jj;
+                pair_types[kk] = 2;
+                id_BB[kk-kk_AB] = kk;
+                kk += 1;
+            }
+        }
+        if( kk != npair ){
+            cout << "Number of pairs populated not equal to expected value" << endl;
         }
     }
-
-    kk_AA = kk; 
-    for(ii = 0; ii < Nm; ii++){
-        for(jj = Nm; jj < Np; jj++){
-            id[0][kk] = ii; 
-            id[1][kk] = jj; 
-            pair_types[kk] = 1;
-            id_AB[kk-kk_AA] = kk;
-            kk +=1;
+    else {
+        // mm_HI off: AA monomer-monomer pairs are handled by the cell list and are NOT
+        // stored (id_AA is not allocated). Store only AB then BB, 0-based, so pd/id are
+        // O(Nm). id_AB[k]=k and id_BB[k]=npair_AB+k make mob's pd[*][id_AB/id_BB[k]]
+        // index the compact AB+BB pd array correctly.
+        for(ii = 0; ii < Nm; ii++){
+            for(jj = Nm; jj < Np; jj++){
+                id[0][kk] = ii;
+                id[1][kk] = jj;
+                pair_types[kk] = 1;
+                id_AB[kk] = kk;
+                kk += 1;
+            }
         }
-    }
-
-    kk_AB = kk; 
-    for(ii = Nm; ii < Np; ii++){
-        for(jj = ii+1; jj < Np; jj++){
-            id[0][kk] = ii;
-            id[1][kk] = jj;
-            pair_types[kk] = 2;
-            id_BB[kk-kk_AB] = kk;
-            kk += 1;
+        kk_AB = kk;   // == npair_AB
+        for(ii = Nm; ii < Np; ii++){
+            for(jj = ii+1; jj < Np; jj++){
+                id[0][kk] = ii;
+                id[1][kk] = jj;
+                pair_types[kk] = 2;
+                id_BB[kk-kk_AB] = kk;
+                kk += 1;
+            }
         }
-    }
-
-
-    if( kk != npair){
-        cout << "Number of pairs populated not equal to expected value" << endl;
+        if( kk != npair_AB + npair_BB ){
+            cout << "Number of pairs populated not equal to expected value" << endl;
+        }
     }
 
     // Set bond ids
@@ -321,7 +353,7 @@ void PolyStokes::init(){
     alok_arrays(pinfo, consts, mm_HI);
 
     std::cout << "Setting vars..." << std::endl;
-    set_vars(pinfo, dataStruct, consts, tether);
+    set_vars(pinfo, dataStruct, consts, tether, mm_HI);
 
     std::cout << "Initializing the solver..." << std::endl;
     init_solver();

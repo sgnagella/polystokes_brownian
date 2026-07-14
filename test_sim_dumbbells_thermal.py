@@ -91,7 +91,7 @@ def build_initial_config(N_dumbbell, r0, colloid_radius=1.0, box=None):
 
 
 def sample_initial_config(N_dumbbell, r0, kbond, kT, colloid_radius=1.0, box=None,
-                          buffer=0.5, seed=None, max_tries=200):
+                          buffer=0.5, min_sep=0.0, seed=None, max_tries=1000):
     """Randomly initialize N_dumbbell free 2-bead dumbbells around a central probe
     (colloid at the origin), equilibrium-consistent rather than grid-placed:
 
@@ -109,7 +109,14 @@ def sample_initial_config(N_dumbbell, r0, kbond, kT, colloid_radius=1.0, box=Non
     rejecting, it is wrapped back into the primary cell using the same convention
     the C++ integrator applies at runtime (Box::wrap / Box::minimum_image, box.cpp:
     v -= L*round(v/L)). Each dumbbell is independently rejection-sampled (redrawing
-    its COM and bond vector) until both wrapped beads clear the colloid; since the
+    its COM and bond vector) until (a) both wrapped beads clear the colloid and (b)
+    both beads are at least `min_sep` (minimum-image) from every bead of every
+    PREVIOUSLY placed dumbbell -- i.e. no inter-dumbbell monomer overlap at t=0, so
+    the monomer excluded-volume (WCA) force starts at zero between distinct
+    dumbbells. Set `min_sep = 2^(1/6) * (2*beta)` (the monomer-monomer WCA cutoff)
+    when running with mono_ev=True. The two beads of a dumbbell are NOT checked
+    against each other -- they are the bonded pair and are allowed to sit at ~r0
+    (which is inside the WCA core; the bond + WCA relax it at runtime). Since the
     colloid sits at the box center, a wrapped position's minimum-image distance to
     it is just its raw norm. Returns a (2*N_dumbbell + 1, 3) array; the last row is
     the colloid at the origin (matches build_initial_config's layout).
@@ -130,21 +137,36 @@ def sample_initial_config(N_dumbbell, r0, kbond, kT, colloid_radius=1.0, box=Non
     def wrap(v):
         return v - L * np.round(v / L)     # matches Box::wrap (box.cpp)
 
+    def min_image_gap(p, others):
+        """Smallest minimum-image distance from point p (3,) to any row of others
+        (M,3); +inf when others is empty."""
+        if others.shape[0] == 0:
+            return np.inf
+        d = others - p
+        d -= L * np.round(d / L)           # nearest image (matches Box::minimum_image)
+        return np.sqrt((d * d).sum(axis=1)).min()
+
     beads = np.zeros((2 * N_dumbbell, 3))
     for d in range(N_dumbbell):
+        placed = beads[:2 * d]             # beads of the already-accepted dumbbells
         for _ in range(max_tries):
             center = rng.uniform(-half, half)      # uniform over the box volume
             bond_vec = r0 * random_unit_vector() + rng.normal(scale=sigma, size=3)
             b0 = wrap(center - 0.5 * bond_vec)
             b1 = wrap(center + 0.5 * bond_vec)
 
-            if np.linalg.norm(b0) >= clearance and np.linalg.norm(b1) >= clearance:
-                beads[2 * d]     = b0
-                beads[2 * d + 1] = b1
-                break
+            if np.linalg.norm(b0) < clearance or np.linalg.norm(b1) < clearance:
+                continue                            # too close to the central colloid
+            if min_sep > 0.0 and (min_image_gap(b0, placed) < min_sep or
+                                  min_image_gap(b1, placed) < min_sep):
+                continue                            # overlaps a previously placed monomer
+
+            beads[2 * d]     = b0
+            beads[2 * d + 1] = b1
+            break
         else:
-            raise RuntimeError(f"could not place dumbbell {d} clear of the colloid "
-                              f"after {max_tries} tries; check clearance vs box size")
+            raise RuntimeError(f"could not place dumbbell {d} without overlap after "
+                               f"{max_tries} tries; check min_sep/clearance vs box size")
 
     conf = np.zeros((2 * N_dumbbell + 1, 3))
     conf[:2 * N_dumbbell] = beads
@@ -377,26 +399,31 @@ def trap_statistics(times, traj, N_trapped, ktrap, kT=1.0, box=None,
 # ----------------------------------------------------------------------------
 # Main
 # ----------------------------------------------------------------------------
-def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
+def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
+         N_dumbbell=6000, kbond=1.0):
     if samplerate is None:
         samplerate = int(1 / dt)               # sample every 1/dt timesteps
 
-    N_dumbbell = 6000
     N_mono = 2                                  # 2-bead dumbbells
     N_trapped = 1                              # single trapped colloid
     N_mono_total = N_dumbbell * N_mono
     Np = N_mono_total + N_trapped
 
-    # Bond / interaction parameters
-    r0 = 2.0 * beta                            # bond rest length (small)
-    kbond = 1.0
+    # Bond / interaction parameters. r0 is set 0.01 above the monomer contact
+    # diameter (2*beta) as a small regularization so bonded beads sit near/above the
+    # monomer-monomer WCA core and are only weakly (ideally not) repelled by it.
+    r0 = 2.0 * beta + 0.01                     # bond rest length
     Lmax = 1.5*r0                             # unused (harmonic), kept for the API
     tau = 1000
     kT = 1.0
     epsilon = 5.0                              # WCA excluded-volume energy scale
     ktrap = 10                                # harmonic trap holding the colloid at the origin
     fene = False
-    conf = sample_initial_config(N_dumbbell, r0, kbond, kT, box=box)
+    # Monomer-monomer WCA cutoff (matches C++ rcuts[0] = 2^(1/6) * sigma[0],
+    # sigma[0] = 2*beta): initialize distinct dumbbells at least this far apart so no
+    # inter-dumbbell excluded-volume overlap exists at t=0.
+    mono_cut = 2.0 ** (1.0 / 6.0) * (2.0 * beta)
+    conf = sample_initial_config(N_dumbbell, r0, kbond, kT, box=box, min_sep=mono_cut)
     bond_ids = build_bond_ids(N_dumbbell)
 
     data_save_dir = f'data/test_dumbbells_thermal_beta_{beta}_fene_{fene}'
@@ -422,6 +449,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
             fene=fene,        # harmonic bonds
             record_forces=False,
             tether=False,      # free dumbbells (NOT tethered to the colloid)
+            mono_ev=True,      # monomer-monomer excluded volume (WCA) on
             box=box,           # None => unbounded; [Lx,Ly,Lz] => periodic
         )
         sim.particle_info(
@@ -446,5 +474,6 @@ if __name__ == "__main__":
     dt = 0.0001
     samplerate = 10; int(1/dt) # sample on brownian timescale of colloid
     beta = 0.1
-    main(beta=beta, dt=dt, samplerate=samplerate, tmax=1.0, box=[50,50,50])
+    main(beta=beta, dt=dt, samplerate=samplerate, tmax=1.0, box=[50,50,50],
+         N_dumbbell=200)
 

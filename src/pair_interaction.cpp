@@ -7,7 +7,7 @@
 
 using namespace arrays;
 
-void pair_interaction(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, Data& dataStruct){
+void pair_interaction(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, Data& dataStruct, bool mono_ev){
     // Computes pair interactions using the Verlet list.
     //
     // Weeks-Chandler-Andersen (WCA) potential: a Lennard-Jones potential truncated
@@ -15,7 +15,9 @@ void pair_interaction(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, D
     // excluded-volume interaction. Applied to
     //   - colloid-monomer pairs (type_id == 1)
     //   - colloid-colloid  pairs (type_id == 2)
-    // Monomer-monomer pairs (type_id == 0) are skipped.
+    //   - monomer-monomer  pairs (type_id == 0) only when mono_ev is set (excluded
+    //     volume enabled); otherwise they are skipped. When enabled, WCA acts on ALL
+    //     monomer pairs, including the bonded intra-dumbbell pair.
     //
     //   U(r) = 4*eps*[ (sigma/r)^12 - (sigma/r)^6 ] + eps,  r < r_cut
     //   F(r) = -dU/dr = (24*eps/r) * [ 2*(sigma/r)^12 - (sigma/r)^6 ]   (repulsive)
@@ -27,16 +29,20 @@ void pair_interaction(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, D
     PetscInt& ndimp = consts.ndimp;
     PetscInt& Np = pinfo.Np;
     double& epsilon = pinfo.epsilon;
-    double dr, dr_inv, rcut, sig, sig_dr, sig2, sig6, sig12, fmag, fx, fy, fz;
+    double dr, dr_inv, rcut, sig, fmag, fx, fy, fz;
     std::vector<float> &rcuts = dataStruct.rcuts;
     std::vector<float> &sigmas = dataStruct.sigmas;
 
+    // NOTE: when mm_HI==false the monomer-monomer (AA) pairs are handled by the cell
+    // list (monomer_wca) and never enter vlist, so the type_id==0 branch below is inert
+    // in that mode. It remains active for the mm_HI==true path, where AA pairs are still
+    // enumerated into vlist and mono_ev applies their WCA here.
     for( kk = 0; kk < (Np-1); kk++ ){
         for( int pidx : vlist[kk] ){
             type_id = pair_types[pidx];
 
-            // Skip monomer-monomer pairs (no excluded-volume WCA here).
-            if (type_id == 0){
+            // Skip monomer-monomer pairs unless excluded volume is enabled.
+            if (type_id == 0 && !mono_ev){
                 continue;
             }
 
@@ -47,17 +53,11 @@ void pair_interaction(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, D
             dr     = pd[3][pidx];
             dr_inv = pd[4][pidx];
 
-            // WCA vanishes beyond the cutoff r_cut = 2^(1/6) * sigma.
-            if( dr >= rcut ){
+            // Repulsive WCA force magnitude (0 at/beyond r_cut = 2^(1/6)*sigma).
+            fmag = wca_force_mag(dr, dr_inv, sig, rcut, epsilon);
+            if( fmag == 0.0 ){
                 continue;
             }
-
-            // Repulsive WCA force magnitude F(r) = (24*eps/r)*(2*(s/r)^12 - (s/r)^6).
-            sig_dr = sig * dr_inv;
-            sig2   = sig_dr * sig_dr;
-            sig6   = sig2 * sig2 * sig2;
-            sig12  = sig6 * sig6;
-            fmag   = 24.0 * epsilon * dr_inv * ( 2.0 * sig12 - sig6 );
 
             // Separation unit vector points from jj to kk (dx = x_kk - x_jj), so a
             // positive fmag pushes kk away from jj (repulsion).

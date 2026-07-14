@@ -13,7 +13,7 @@
 
 class PolyStokes {
 public:
-    PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI=true, bool chain_HI=false, bool fene=true, bool record_forces=false, bool tether=false, const std::vector<double>& box=std::vector<double>(), double t=0.0);
+    PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI=true, bool chain_HI=false, bool fene=true, bool record_forces=false, bool tether=false, bool mono_ev=false, const std::vector<double>& box=std::vector<double>(), double t=0.0);
     ~PolyStokes();
     void initial_configuration(pybind11::array_t<double> init_x0);
     void particle_info(double kT, double epsilon, int Np, int Nc, int Nm, int Npoly, int Nmono_per_chain, double beta, double kbond, double r0, double Lmax, double tau);
@@ -31,6 +31,7 @@ private:
     bool fene;
     bool record_forces;
     bool tether; // whether to bond each chain's inner monomer to a host colloid (colloidal brush)
+    bool mono_ev; // whether to apply monomer-monomer excluded-volume (WCA) interactions
     Box box;     // periodic box (inactive unless configured with 3 lengths)
 
     Consts consts;
@@ -55,6 +56,18 @@ private:
     std::mt19937_64 rng;
     std::normal_distribution<double> normal_dist;
 
+    // Monomer cell list, used only when (mm_HI == false && mono_ev) to find
+    // monomer-monomer (AA) WCA neighbors in O(Nm) instead of the O(Nm^2) all-pairs
+    // scan. Rebuilt each step by build_monomer_cell_list() and consumed by
+    // monomer_wca(). Head-of-chain (cl_head, size nCells) + singly linked list
+    // (cl_next, size Nm) over monomer indices 0..Nm-1.
+    std::vector<int> cl_head;     // head monomer per cell (-1 = empty)
+    std::vector<int> cl_next;     // next monomer in the same cell (-1 = end)
+    int    cl_nc[3]   = {0, 0, 0};   // cells per axis
+    double cl_size[3] = {0.0, 0.0, 0.0}; // cell edge per axis
+    double cl_org[3]  = {0.0, 0.0, 0.0}; // lower corner (cell 0 origin) per axis
+    bool   cl_periodic = false;   // apply periodic cell-index wrap in the neighbor scan
+
     // rank2_array delta;
     // rank3_array eps;
     // // Declare per-particle mobility tensors 
@@ -77,6 +90,8 @@ private:
     void init_square_root_solver();
     void init_solver();
     void check_dist();
+    void build_monomer_cell_list();          // bin monomers into cl_head/cl_next (see cell_list.cpp)
+    void monomer_wca(PetscScalar* fext);     // add monomer-monomer WCA via the cell list
     void RHS(bool drift=false);
     void mobility(double dr, double dr_inv, double dx, double dy, double dz, bool self, bool AB, bool AA);
     // Thread-safe monomer-colloid (AB) pair mobility: writes only to the passed buffers

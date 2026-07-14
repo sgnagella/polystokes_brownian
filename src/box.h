@@ -25,6 +25,10 @@ public:
     // True when periodic boundary conditions are enabled.
     bool active() const { return enabled_; }
 
+    // Orthorhombic box length along axis d (0=x, 1=y, 2=z). Only meaningful when
+    // active(); used e.g. to size a cell list. Returns 0 when inactive.
+    double length(int d) const { return L_[d]; }
+
     // Replace a separation vector with its minimum image (in place).
     // No-op when the box is inactive.
     void minimum_image(double& dx, double& dy, double& dz) const;
