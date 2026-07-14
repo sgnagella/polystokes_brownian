@@ -65,6 +65,7 @@ namespace arrays{
     Mat M;
     Mat Mcm_block;
     Mat Mcc_block;
+    Mat Mcc_base;
     Mat B;
     Mat A;
 
@@ -299,7 +300,16 @@ namespace arrays{
         MatSetSizes(Mcm_block, PETSC_DECIDE, PETSC_DECIDE, nc11, nm3);
         MatSetType(Mcm_block, MATDENSE);
         MatSetUp(Mcm_block);
-        // M^cc : nc11 x nc11 constant colloid self-mobility (filled once in fill_self).
+        // M^cc : nc11 x nc11 colloid self-mobility. Mcc_base holds the raw physics
+        // (filled once in fill_self); Mcc_block is the working copy the saddle operator
+        // and the Brownian sqrt read, reset from Mcc_base + an adaptive eigen-correction
+        // each step (build_slip_vel_schur).
+        MatCreate(PETSC_COMM_SELF, &Mcc_base);
+        MatSetSizes(Mcc_base, PETSC_DECIDE, PETSC_DECIDE, nc11, nc11);
+        MatSetType(Mcc_base, MATDENSE);
+        MatSetUp(Mcc_base);
+        MatZeroEntries(Mcc_base);
+
         MatCreate(PETSC_COMM_SELF, &Mcc_block);
         MatSetSizes(Mcc_block, PETSC_DECIDE, PETSC_DECIDE, nc11, nc11);
         MatSetType(Mcc_block, MATDENSE);

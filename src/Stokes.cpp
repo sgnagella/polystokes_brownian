@@ -33,6 +33,7 @@ void PolyStokes::init_coeffs(){
     coeffs.twoPI = 2.0 * M_PI;
     coeffs.c1d2 = 1./2.;
     coeffs.c1d3 = 1./3.;
+    coeffs.c1d4 = 1./4.;
     coeffs.c2d3 = 2./3.;
     coeffs.c3d2 = 3./2.; 
     coeffs.c3d4 = 3./4.; 

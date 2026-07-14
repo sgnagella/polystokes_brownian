@@ -118,12 +118,8 @@ void PolyStokes::mobility(
 
         // Compute the analytical pair mobilities
         // Translation-force coupling
-        if( AB ){
-            x12a = dr_inv - coeffs.c1d2 * pinfo.beta2 * dr_inv3;
-            y12a = coeffs.c1d2 * x12a;
-        }
-
-        else if( AA ){
+        // (AB is handled by the mobility_AB() delegation above and never reaches here.)
+        if( AA ){
             if( dr > 2.0 * pinfo.beta ){
                 x12a = coeffs.c3d8 * dr_inv - 2.0 * dr_inv3;
                 y12a = coeffs.c3d4 * dr_inv - coeffs.c1d2 * dr_inv3;
@@ -161,16 +157,10 @@ void PolyStokes::mobility(
         // Rotation-force coupling
         y12b = -coeffs.c3d4 * dr_inv2;
 
-        // Translation-stress coupling
-        if( AB ){
-            x12g = coeffs.c9d4 * dr_inv2 - coeffs.c9d20 * dr_inv4 * (ndim + const5 * beta2); 
-            y12g = coeffs.c9d10 * dr_inv4 * (coeffs.c1d2 + coeffs.c5d6 * beta2);
-        }
-        else{
-            x12g = coeffs.c9d4 * dr_inv2 - coeffs.c18d5 * dr_inv4;
-            y12g = coeffs.c6d5 * dr_inv4; 
-            
-        }
+        // Translation-stress coupling (BB only here; AA already returned above, and AB is
+        // handled by the mobility_AB() delegation and never reaches this point).
+        x12g = coeffs.c9d4 * dr_inv2 - coeffs.c18d5 * dr_inv4;
+        y12g = coeffs.c6d5 * dr_inv4;
         
         // Populate the per-particle mobility tensors
         // Translation-force and rotation-torque
@@ -396,9 +386,14 @@ void PolyStokes::mobility_AB(double dr, double dr_inv, double dx, double dy, dou
     const double dr_inv3 = dr_inv2 * dr_inv;
     const double dr_inv4 = dr_inv3 * dr_inv;
 
-    // Translation-force coupling (AB)
-    const double x12a = dr_inv - coeffs.c1d2 * beta2 * dr_inv3;
-    const double y12a = coeffs.c1d2 * x12a;
+    // Translation-force coupling (AB): standard Rotne-Prager-Yamakawa tensor for two
+    // UNEQUAL spheres (radius beta for the monomer, 1 for the colloid, in colloid-radius
+    // units), i.e. the (a_i^2+a_j^2) correction with a_i=beta, a_j=1:
+    //   x = 3/(2r) - (1+beta^2)/(2 r^3),   y = 3/(4r) + (1+beta^2)/(4 r^3)
+    // This reduces exactly to the equal-sphere formula below (x12a=3/2 dr_inv - dr_inv3,
+    // y12a=3/4 dr_inv + 1/2 dr_inv3) at beta=1, the required self-consistency check.
+    const double x12a = coeffs.c3d2 * dr_inv - coeffs.c1d2 * (1.0 + beta2) * dr_inv3;
+    const double y12a = coeffs.c3d4 * dr_inv + coeffs.c1d4 * (1.0 + beta2) * dr_inv3;
     for(int ii = 0; ii < ndim; ii++){
         mob_a[ii][ii] = x12a * ee[ii][ii] + y12a * (1. - ee[ii][ii]);
         for(int jj = ii + 1; jj < ndim; jj++){
@@ -497,20 +492,21 @@ void PolyStokes::fill_self(){
         ph3 = nm3nc6 + const5 * (kk-Nm);     // Stress modes
 
         // cm/cc local index = (global colloid DOF) - nm3
-        // Colloid self mobility: goes into M^cc (Mcc_block) always, and additionally into
-        // the dense A only on the mm_HI path (the shell reads Mcc_block directly).
+        // Colloid self mobility: the raw physics goes into Mcc_base always, and
+        // additionally into the dense A only on the mm_HI path (the shell reads
+        // Mcc_block, which is derived from Mcc_base, directly).
         PetscInt cc1, cc2;
         for( ii = 0; ii < ndim; ii++){
             VALA = (PetscScalar)mob_a[ii][ii];
             IDX1 = ph1 + ii;
             cc1 = IDX1 - nm3;
-            ierr = MatSetValues(Mcc_block, 1, &cc1, 1, &cc1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+            ierr = MatSetValues(Mcc_base, 1, &cc1, 1, &cc1, &VALA, INSERT_VALUES); CHKERRV(ierr);
             if( mm_HI ){ ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr); }
 
             VALA = (PetscScalar)mob_c[ii][ii];
             IDX1 = ph2 + ii;
             cc1 = IDX1 - nm3;
-            ierr = MatSetValues(Mcc_block, 1, &cc1, 1, &cc1, &VALA, INSERT_VALUES); CHKERRV(ierr);
+            ierr = MatSetValues(Mcc_base, 1, &cc1, 1, &cc1, &VALA, INSERT_VALUES); CHKERRV(ierr);
             if( mm_HI ){ ierr = MatSetValues(A, 1, &IDX1, 1, &IDX1, &VALA, INSERT_VALUES); CHKERRV(ierr); }
         }
 
@@ -520,15 +516,20 @@ void PolyStokes::fill_self(){
                 IDX1 = ph3 + ii;
                 IDX2 = ph3 + jj;
                 cc1 = IDX1 - nm3;  cc2 = IDX2 - nm3;
-                ierr = MatSetValues(Mcc_block, 1, &cc1, 1, &cc2, &VALA, INSERT_VALUES); CHKERRV(ierr);
+                ierr = MatSetValues(Mcc_base, 1, &cc1, 1, &cc2, &VALA, INSERT_VALUES); CHKERRV(ierr);
                 if( mm_HI ){ ierr = MatSetValues(A, 1, &IDX1, 1, &IDX2, &VALA, INSERT_VALUES); CHKERRV(ierr); }
             }
         }
 
     }
 
-    ierr = MatAssemblyBegin(Mcc_block, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
-    ierr = MatAssemblyEnd(Mcc_block, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+    ierr = MatAssemblyBegin(Mcc_base, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+    ierr = MatAssemblyEnd(Mcc_base, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
+
+    // Initialize the working copy to the raw physics (no correction yet -- the first
+    // adaptive, per-eigen-direction correction is applied in build_slip_vel_schur on
+    // the first Brownian-slip step; this covers kT==0 runs where that never happens).
+    ierr = MatCopy(Mcc_base, Mcc_block, SAME_NONZERO_PATTERN); CHKERRV(ierr);
 
     return;
 }

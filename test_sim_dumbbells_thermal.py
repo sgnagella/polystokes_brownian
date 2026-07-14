@@ -90,6 +90,68 @@ def build_initial_config(N_dumbbell, r0, colloid_radius=1.0, box=None):
     return conf
 
 
+def sample_initial_config(N_dumbbell, r0, kbond, kT, colloid_radius=1.0, box=None,
+                          buffer=0.5, seed=None, max_tries=200):
+    """Randomly initialize N_dumbbell free 2-bead dumbbells around a central probe
+    (colloid at the origin), equilibrium-consistent rather than grid-placed:
+
+      - Placement: each dumbbell's CENTER OF MASS is drawn UNIFORMLY over the box
+        volume (independent per-axis Uniform(-Lx/2, Lx/2) etc.) -- `box=[Lx,Ly,Lz]`
+        is required.
+      - Alignment: each dumbbell's bond direction is independently uniform on the
+        sphere (isotropic orientation).
+      - Bond vector: drawn from the Gaussian Boltzmann distribution of the harmonic
+        spring linearized about r0: vec = r0*u_bond + xi, xi ~ N(0, kT/kbond, size=3)
+        (each Cartesian component of the displacement from equilibrium is an
+        independent Gaussian with the equipartition variance kT/kbond).
+
+    A bead offset from a COM near a face can land outside the box; rather than
+    rejecting, it is wrapped back into the primary cell using the same convention
+    the C++ integrator applies at runtime (Box::wrap / Box::minimum_image, box.cpp:
+    v -= L*round(v/L)). Each dumbbell is independently rejection-sampled (redrawing
+    its COM and bond vector) until both wrapped beads clear the colloid; since the
+    colloid sits at the box center, a wrapped position's minimum-image distance to
+    it is just its raw norm. Returns a (2*N_dumbbell + 1, 3) array; the last row is
+    the colloid at the origin (matches build_initial_config's layout).
+    """
+    if box is None:
+        raise ValueError("sample_initial_config requires box=[Lx,Ly,Lz] for uniform placement")
+
+    rng = np.random.default_rng(seed)
+    clearance = colloid_radius + buffer
+    L = np.asarray(box, dtype=float)
+    half = 0.5 * L
+    sigma = np.sqrt(kT / kbond)
+
+    def random_unit_vector():
+        v = rng.normal(size=3)
+        return v / np.linalg.norm(v)
+
+    def wrap(v):
+        return v - L * np.round(v / L)     # matches Box::wrap (box.cpp)
+
+    beads = np.zeros((2 * N_dumbbell, 3))
+    for d in range(N_dumbbell):
+        for _ in range(max_tries):
+            center = rng.uniform(-half, half)      # uniform over the box volume
+            bond_vec = r0 * random_unit_vector() + rng.normal(scale=sigma, size=3)
+            b0 = wrap(center - 0.5 * bond_vec)
+            b1 = wrap(center + 0.5 * bond_vec)
+
+            if np.linalg.norm(b0) >= clearance and np.linalg.norm(b1) >= clearance:
+                beads[2 * d]     = b0
+                beads[2 * d + 1] = b1
+                break
+        else:
+            raise RuntimeError(f"could not place dumbbell {d} clear of the colloid "
+                              f"after {max_tries} tries; check clearance vs box size")
+
+    conf = np.zeros((2 * N_dumbbell + 1, 3))
+    conf[:2 * N_dumbbell] = beads
+    conf[-1] = [0.0, 0.0, 0.0]                        # trapped colloid at the origin
+    return conf
+
+
 def build_bond_ids(N_dumbbell):
     """Intra-dumbbell bonds: dumbbell d bonds beads (2d, 2d+1)."""
     bond_ids = np.zeros((2, N_dumbbell), dtype=int)
@@ -319,7 +381,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
     if samplerate is None:
         samplerate = int(1 / dt)               # sample every 1/dt timesteps
 
-    N_dumbbell = 1000
+    N_dumbbell = 6000
     N_mono = 2                                  # 2-bead dumbbells
     N_trapped = 1                              # single trapped colloid
     N_mono_total = N_dumbbell * N_mono
@@ -334,7 +396,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None):
     epsilon = 5.0                              # WCA excluded-volume energy scale
     ktrap = 10                                # harmonic trap holding the colloid at the origin
     fene = False
-    conf = build_initial_config(N_dumbbell, r0, box=box)
+    conf = sample_initial_config(N_dumbbell, r0, kbond, kT, box=box)
     bond_ids = build_bond_ids(N_dumbbell)
 
     data_save_dir = f'data/test_dumbbells_thermal_beta_{beta}_fene_{fene}'
@@ -384,4 +446,5 @@ if __name__ == "__main__":
     dt = 0.0001
     samplerate = 10; int(1/dt) # sample on brownian timescale of colloid
     beta = 0.1
-    main(beta=beta, dt=dt, samplerate=samplerate, tmax=25.0, box=[50,50,50])
+    main(beta=beta, dt=dt, samplerate=samplerate, tmax=1.0, box=[50,50,50])
+

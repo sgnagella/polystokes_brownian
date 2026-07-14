@@ -79,6 +79,11 @@ namespace arrays{
     // operator and the Brownian slip square root, so neither needs a dense grand mobility.
     extern Mat Mcm_block;
     extern Mat Mcc_block;
+    // Pristine, never-modified colloid self-mobility (raw physics, set once in
+    // fill_self()). Mcc_block is reset from this each step and given an adaptive,
+    // per-eigen-direction correction (build_slip_vel_schur) so the correction never
+    // accumulates across steps.
+    extern Mat Mcc_base;
 
     extern Vec X;
     extern Vec Xd;

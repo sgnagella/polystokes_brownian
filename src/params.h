@@ -84,6 +84,7 @@ struct Coeffs{
     double twoPI;
     double c1d2;
     double c1d3;
+    double c1d4;
     double c2d3;
     double c3d2;
     double c3d4;

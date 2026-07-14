@@ -29,6 +29,7 @@ void PolyStokes::cleanup(){
     // Arrowhead mobility pieces
     if (Mcm_block) { ierr = MatDestroy(&Mcm_block); CHKERRV(ierr); }
     if (Mcc_block) { ierr = MatDestroy(&Mcc_block); CHKERRV(ierr); }
+    if (Mcc_base)  { ierr = MatDestroy(&Mcc_base);  CHKERRV(ierr); }
 
     PetscBool petsc_initialized, petsc_finalized;
     PetscInitialized(&petsc_initialized);
