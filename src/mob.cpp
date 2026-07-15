@@ -370,6 +370,7 @@ void PolyStokes::mobility_AB(double dr, double dr_inv, double dx, double dy, dou
     // to the AB path of mobility().
     const int ndim   = consts.ndim;
     const int const5 = consts.const5;
+    const double beta  = pinfo.beta;
     const double beta2 = pinfo.beta2;
 
     const double e[3] = { dx, dy, dz };
@@ -386,14 +387,57 @@ void PolyStokes::mobility_AB(double dr, double dr_inv, double dx, double dy, dou
     const double dr_inv3 = dr_inv2 * dr_inv;
     const double dr_inv4 = dr_inv3 * dr_inv;
 
-    // Translation-force coupling (AB): standard Rotne-Prager-Yamakawa tensor for two
-    // UNEQUAL spheres (radius beta for the monomer, 1 for the colloid, in colloid-radius
-    // units), i.e. the (a_i^2+a_j^2) correction with a_i=beta, a_j=1:
-    //   x = 3/(2r) - (1+beta^2)/(2 r^3),   y = 3/(4r) + (1+beta^2)/(4 r^3)
-    // This reduces exactly to the equal-sphere formula below (x12a=3/2 dr_inv - dr_inv3,
-    // y12a=3/4 dr_inv + 1/2 dr_inv3) at beta=1, the required self-consistency check.
-    const double x12a = coeffs.c3d2 * dr_inv - coeffs.c1d2 * (1.0 + beta2) * dr_inv3;
-    const double y12a = coeffs.c3d4 * dr_inv + coeffs.c1d4 * (1.0 + beta2) * dr_inv3;
+    // Monomer-colloid (AB) mobility, REGULARIZED for overlap using the different-sized
+    // Rotne-Prager-Yamakawa tensors of Zuk, Wajnryb, Mizerski & Szymczak, J. Fluid Mech.
+    // 741 (2014) R5 (doi:10.1017/jfm.2013.668). Radii (colloid-radius units): colloid
+    // a=1, monomer b=beta. Three regimes on the center-to-center distance dr:
+    //   dr >= a+b            : far-field (original formulas; not SPD but valid there),
+    //   a-b < dr < a+b       : overlapping-sphere regularization (finite, keeps M^cm bounded),
+    //   dr <= a-b            : monomer fully inside the colloid (engulfed limit).
+    // Without this, the far-field 1/dr^k terms diverge as a monomer penetrates the colloid,
+    // blowing up M^cm and making the Schur-complement square root indefinite for concentrated
+    // systems. Units: 6*pi*eta = 1 (colloid self-mobility 1, monomer self-mobility 1/beta).
+    const double a1 = 1.0;              // colloid radius
+    const double b1 = beta;             // monomer radius (= pinfo.beta)
+    const double rsum  = a1 + b1;
+    const double rdiff = a1 - b1;       // beta < 1 here, so a1 > b1 (colloid is larger)
+    const double dr2 = dr * dr;
+    const double dr3 = dr2 * dr;
+
+    double x12a, y12a, y12b;
+    if( dr >= rsum ){
+        // Far-field translational (eq 3.1 upper) and rotational-translational (eq 3.3 upper).
+        // tt reduces to the equal-sphere formula at beta=1 (self-consistency check).
+        x12a = coeffs.c3d2 * dr_inv - coeffs.c1d2 * (1.0 + beta2) * dr_inv3;
+        y12a = coeffs.c3d4 * dr_inv + coeffs.c1d4 * (1.0 + beta2) * dr_inv3;
+        y12b = -coeffs.c3d4 * dr_inv2;
+    }
+    else if( dr > rdiff ){
+        // Overlapping spheres. Translational tt (Zuk et al. eq 3.1 middle), prefactor
+        // 1/(6 pi eta a b) = 1/(a b): mu = pref[ I_coeff*(I) + RR_coeff*(Rhat Rhat) ].
+        const double pref_tt = 1.0 / (a1 * b1);
+        const double t       = rdiff * rdiff + 3.0 * dr2;   // (a-b)^2 + 3 dr^2
+        const double u       = rdiff * rdiff - dr2;         // (a-b)^2 - dr^2
+        const double I_coeff  = (16.0 * dr3 * (a1 + b1) - t * t) / (32.0 * dr3);
+        const double RR_coeff = 3.0 * u * u / (32.0 * dr3);
+        y12a = pref_tt * I_coeff;                 // perpendicular (I - Rhat Rhat) part
+        x12a = pref_tt * (I_coeff + RR_coeff);    // parallel (Rhat Rhat) part
+        // Rotational-translational rt (Zuk et al. eq 3.3 middle), i=colloid (a1), j=monomer (b1).
+        // Code convention y12b = -(paper mu^rt scalar) to match the far-field sign above.
+        const double pref_rt = 3.0 / (8.0 * a1 * a1 * a1 * b1);   // 1/(16 pi eta a^3 b)
+        const double poly = (a1 - b1 + dr) * (a1 - b1 + dr)
+                          * (b1 * b1 + 2.0 * b1 * (a1 + dr) - 3.0 * (a1 - dr) * (a1 - dr))
+                          / (8.0 * dr2);
+        y12b = -(pref_rt * poly);
+    }
+    else{
+        // Monomer fully engulfed by the colloid (dr <= a-b). tt -> larger-sphere self
+        // mobility 1/(6 pi eta a) = 1/a (eq 3.1 lower); rt -> Theta(a-b) dr / zeta_rr_colloid,
+        // zeta_rr = 8 pi eta a^3 = (4/3) a^3 (eq 3.3 lower).
+        x12a = 1.0 / a1;
+        y12a = 1.0 / a1;
+        y12b = -( dr / ((4.0 / 3.0) * a1 * a1 * a1) );
+    }
     for(int ii = 0; ii < ndim; ii++){
         mob_a[ii][ii] = x12a * ee[ii][ii] + y12a * (1. - ee[ii][ii]);
         for(int jj = ii + 1; jj < ndim; jj++){
@@ -402,11 +446,16 @@ void PolyStokes::mobility_AB(double dr, double dr_inv, double dx, double dy, dou
         }
     }
 
-    // Rotation-force coupling
-    const double y12b = -coeffs.c3d4 * dr_inv2;
-    // Translation-stress coupling (AB)
-    const double x12g = coeffs.c9d4 * dr_inv2 - coeffs.c9d20 * dr_inv4 * (ndim + const5 * beta2);
-    const double y12g = coeffs.c9d10 * dr_inv4 * (coeffs.c1d2 + coeffs.c5d6 * beta2);
+    // Translation-stress (dipolar) coupling (AB). INTERIM: the exact different-sized
+    // overlap kernel (Zuk et al. eq 3.4-3.6, mu^td) is not yet transcribed/verified, so for
+    // dr < a+b we FREEZE the far-field tensor at its dr=a+b value (bounded, C0-continuous) to
+    // keep M^cm finite. TODO: replace with the exact mu^td overlap/engulfed branches.
+    const double dre      = (dr < rsum) ? rsum : dr;
+    const double dre_inv  = 1.0 / dre;
+    const double dre_inv2 = dre_inv * dre_inv;
+    const double dre_inv4 = dre_inv2 * dre_inv2;
+    const double x12g = coeffs.c9d4 * dre_inv2 - coeffs.c9d20 * dre_inv4 * (ndim + const5 * beta2);
+    const double y12g = coeffs.c9d10 * dre_inv4 * (coeffs.c1d2 + coeffs.c5d6 * beta2);
 
     // Translation-torque
     for(int ii = 0; ii < ndim; ii++){
