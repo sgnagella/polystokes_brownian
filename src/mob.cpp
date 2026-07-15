@@ -446,18 +446,47 @@ void PolyStokes::mobility_AB(double dr, double dr_inv, double dx, double dy, dou
         }
     }
 
-    // Translation-stress (dipolar) coupling (AB). INTERIM: the exact different-sized
-    // overlap kernel (Zuk et al. eq 3.4-3.6, mu^td) is not yet transcribed/verified, so for
-    // dr < a+b we FREEZE the far-field tensor at its dr=a+b value (bounded, C0-continuous) to
-    // keep M^cm finite. TODO: replace with the exact mu^td overlap/engulfed branches.
-    const double dre      = (dr < rsum) ? rsum : dr;
-    const double dre_inv  = 1.0 / dre;
-    const double dre_inv2 = dre_inv * dre_inv;
-    const double dre_inv4 = dre_inv2 * dre_inv2;
-    const double x12g = coeffs.c9d4 * dre_inv2 - coeffs.c9d20 * dre_inv4 * (ndim + const5 * beta2);
-    const double y12g = coeffs.c9d10 * dre_inv4 * (coeffs.c1d2 + coeffs.c5d6 * beta2);
+    // Translation-dipole (stresslet) coupling (AB), regularized with the different-sized RPY
+    // in the Kim & Karrila (x^g, y^g) basis (mobdat/rpy_kk_mobilities.tex, from Zuk et al.).
+    // The code's stored (x12g, y12g) = -(9/10) * (x^g, y^g) -- a single R-independent constant
+    // (the stresslet-DOF normalization x units, = (9/4)/(-5/2)) that reproduces the far-field
+    // x12g/y12g exactly. Roles for mob_gt: velocity/monomer a_i=beta, dipole/colloid a_j=1.
+    double x12g, y12g;
+    if( dr >= rsum ){
+        // Far-field (eq for R > a_i+a_j) -- byte-identical to the original.
+        x12g = coeffs.c9d4 * dr_inv2 - coeffs.c9d20 * dr_inv4 * (ndim + const5 * beta2);
+        y12g = coeffs.c9d10 * dr_inv4 * (coeffs.c1d2 + coeffs.c5d6 * beta2);
+    }
+    else{
+        const double ai = b1;          // velocity sphere = monomer (beta)
+        const double aj = a1;          // dipole sphere   = colloid (1)
+        double xg, yg;
+        if( dr > rdiff ){
+            // Overlapping branch (a_>-a_< < R <= a_i+a_j).
+            const double R4 = dr2 * dr2;
+            const double R5 = R4 * dr;
+            const double R6 = R5 * dr;
+            const double dab  = aj - ai;                 // a_j - a_i (>0 here)
+            const double dab5 = dab*dab*dab*dab*dab;     // (a_j-a_i)^5
+            const double P = 10.0*R6 - 24.0*ai*R5 - 15.0*R4*(aj*aj - ai*ai)
+                           + dab5 * (ai + 5.0*aj);
+            const double u  = (ai - aj)*(ai - aj) - dr2; // (a_i-a_j)^2 - R^2
+            const double Q  = u * u * ( (ai - aj)*(ai + 5.0*aj) - dr2 );
+            yg = P / (96.0 * ai * R4);
+            xg = (2.0*P + 5.0*Q) / (96.0 * ai * R4);
+        }
+        else{
+            // Complete-overlap branch (R <= a_>-a_<): aj=1 > ai=beta, Theta(aj-ai)=1.
+            xg = -dr;
+            yg = -0.5 * dr;
+        }
+        x12g = -0.9 * xg;   // -(9/10) code-convention factor
+        y12g = -0.9 * yg;
+    }
 
-    // Translation-torque
+    // Translation-torque. NOTE: mob_bt reuses the y12b scalar (= -mu^rt, colloid=i). In the
+    // overlap branch the true mu^tr uses the interchanged radii, so mob_bt is only exact in
+    // the far field; this affects the mm_HI=true M^mc block, not the mm_HI=false Schur target.
     for(int ii = 0; ii < ndim; ii++){
         for(int jj = 0; jj < ndim; jj++){
             int kk = ndim - ii - jj;
