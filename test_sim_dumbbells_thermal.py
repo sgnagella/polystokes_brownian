@@ -475,5 +475,5 @@ if __name__ == "__main__":
     samplerate = 10; int(1/dt) # sample on brownian timescale of colloid
     beta = 0.1
     main(beta=beta, dt=dt, samplerate=samplerate, tmax=1.0, box=[50,50,50],
-         N_dumbbell=200)
+         N_dumbbell=10000, kbond=0.1)
 
