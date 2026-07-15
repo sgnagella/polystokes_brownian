@@ -19,6 +19,18 @@ namespace arrays{
     extern std::vector<double> up;
     extern std::vector<double> udiff;
 
+    // Predictor-corrector (trapezoidal/Heun) workspace, used to damp explicit-step
+    // overshoot of stiff forces (bonds, WCA) that could otherwise push a monomer
+    // through the colloid. x_n snapshots the position at the start of the step (size
+    // n3); v_det_n/v_det_c hold the deterministic (force-only) velocity at x_n and at
+    // the predicted position x_pred (size nm3nc6); v_brown holds the Brownian slip
+    // velocity, sampled once at x_n and reused unchanged for the corrector (Euler for
+    // the stochastic part, Heun for the deterministic part). See run.cpp.
+    extern std::vector<double> x_n;
+    extern std::vector<double> v_det_n;
+    extern std::vector<double> v_det_c;
+    extern std::vector<double> v_brown;
+
     extern std::vector<double> fext; 
     extern std::vector<double> uext;
 
@@ -87,6 +99,7 @@ namespace arrays{
 
     extern Vec X;
     extern Vec Xd;
+    extern Vec Xdet;   // predictor-corrector deterministic-only solve (see solve_deterministic_vel)
     extern Vec rhs;
     extern Vec W;
 
@@ -102,6 +115,11 @@ namespace arrays{
 
     void initialize_u(int size);
     void initialize_udiff(int size);
+
+    void initialize_x_n(int size);
+    void initialize_v_det_n(int size);
+    void initialize_v_det_c(int size);
+    void initialize_v_brown(int size);
 
     void initialize_uinf(int size);
     void initialize_einf(int size);
@@ -162,6 +180,8 @@ namespace arrays{
     void initialize_X(PetscInt nm6nc17);
 
     void initialize_Xd(PetscInt nm6nc17);
+
+    void initialize_Xdet(PetscInt nm6nc17);
 
     void initialize_W(PetscInt nm3nc11);
 

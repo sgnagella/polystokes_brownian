@@ -21,6 +21,7 @@ void PolyStokes::cleanup(){
     if (B) { ierr = MatDestroy(&B); CHKERRV(ierr); }
     if (rhs) { ierr = VecDestroy(&rhs); CHKERRV(ierr); }
     if (X) { ierr = VecDestroy(&X); CHKERRV(ierr); }
+    if (Xdet) { ierr = VecDestroy(&Xdet); CHKERRV(ierr); }
     if (ksp) { ierr = KSPDestroy(&ksp); CHKERRV(ierr); }
 
     // Schur-complement workspace (only built when kT > 0 && !mm_HI)

@@ -103,6 +103,11 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts, bool mm_HI){
     initialize_x0( consts.nm3nc3 ); 
     initialize_up( consts.nm3nc6 );
     initialize_udiff( consts.nm3nc6 );
+    // Predictor-corrector (trapezoidal) workspace.
+    initialize_x_n( consts.n3 );
+    initialize_v_det_n( consts.nm3nc6 );
+    initialize_v_det_c( consts.nm3nc6 );
+    initialize_v_brown( consts.nm3nc6 );
     initialize_fext( consts.nm3nc6 );
     initialize_drift( consts.nm3nc6 );  
     initialize_fb( consts.nm3nc11 );
@@ -151,6 +156,8 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts, bool mm_HI){
     initialize_W(consts.nm3nc11);
     std::cout << "Xd" << std::endl;
     initialize_Xd(consts.nm6nc17);
+    std::cout << "Xdet" << std::endl;
+    initialize_Xdet(consts.nm6nc17);
 
     return;
 }

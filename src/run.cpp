@@ -24,14 +24,17 @@
 // #include "config.h"
 
 #include "Stokes.h"
+#include "arrays.h"
 #include <iostream>
 #include <pybind11/iostream.h>
 #include <pybind11/pybind11.h>
 #include <signal.h>
 #include <atomic>
-#include <petscsys.h> 
+#include <algorithm>
+#include <petscsys.h>
 
-// using namespace arrays;
+// Needed for the predictor-corrector workspace (x, x_n, up, udiff, v_det_n/c, v_brown).
+using namespace arrays;
 
 namespace py = pybind11;
 
@@ -65,55 +68,58 @@ void PolyStokes::run(){
 
     for(int i = 0; i < timeinfo.nsteps; i++){
         timeinfo.t += timeinfo.dt;
-        // std::cout << "Time step: " << i << std::endl;
-        // std::cout << "Time: " << t << std::endl;
-        // Compute pairwise distances after reading initial particle config
-        // std::cout << "Checking pairwise distances..." << std::endl;
-        check_dist();
 
-        // Monomer-monomer (AA) neighbor search via the cell list, used for excluded
-        // volume when mm_HI is off (check_dist then only handles AB/BB). Built here, on
-        // the just-wrapped positions, at the same cadence as check_dist; consumed by
-        // monomer_wca() inside RHS().
+        // Predictor-corrector (trapezoidal/Heun) time step. The stiff internal forces
+        // (harmonic bonds, WCA) are integrated with an explicit-Euler predictor followed
+        // by a corrector that re-evaluates the deterministic force at the predicted
+        // position and averages -- this damps the overshoot that a plain Euler step can
+        // produce for a stiff bond, which otherwise lets a monomer tunnel past the
+        // colloid's WCA barrier in a single step. The Brownian slip velocity and the RFD
+        // thermal drift are sampled ONCE at x_n (Euler for the stochastic part) and reused
+        // unchanged for the corrector, preserving fluctuation-dissipation.
+        //
+        // x_{n+1} = x_n + 0.5*(v_det(x_n) + v_det(x_pred))*dt + v_brown(x_n)*dt
+        //                + (kT/(2 eps)) * udiff(x_n) * dt
+        x_n = x;   // snapshot the clean position before any perturbation this step
+
+        // ---- Predictor stage: forces/mobility at x_n ----
+        check_dist();
         if( !mm_HI && mono_ev ){
             build_monomer_cell_list();
         }
+        RHS();          // rhs <- deterministic forces only (RHS() zeros rhs first)
+        mob();          // A  <- mobility at x_n
 
-        // Construct RHS and correct for any overlaps
-        // std::cout << "Computing RHS" << std::endl;
-        RHS();
+        solve_deterministic_vel(v_det_n);   // v_det_n = M(x_n) F(x_n)
 
-        // std::cout << "Computing the mobility matrix..." << std::endl;
-        // Compute the grand mobility matrix and insert to saddle point matrix
-        mob();
-        
-        // Construct the saddle point matrix
-        // saddle();
-
-        // Add lubrication
-        // add_lub();
-
-        // Compute the brownian drift 
         if (pinfo.kT > 0){
-            // std::cout << "Computing Brownian slip velocities..." << std::endl;
-            solve_slip_vel();
-            
-            // Get new particle velocities 
-            new_vel();
-
-            // std::cout << "Computing Brownian drift..." << std::endl;
-            drift();
-
+            solve_slip_vel();   // rhs += Brownian noise (added on top of the forces already there)
+            new_vel();          // up <- v_det_n + v_brown_n (full predictor velocity)
+            for(int k = 0; k < consts.nm3nc6; k++){ v_brown[k] = up[k] - v_det_n[k]; }
+            drift();            // RFD thermal drift at x_n -> udiff (leaves x perturbed)
         }
         else{
-            // Get new particle velocities 
-            new_vel();
+            new_vel();          // up <- v_det_n (no noise)
+            std::fill(v_brown.begin(), v_brown.end(), 0.0);
         }
-        
-        // std::cout << "\n" << std::endl;
 
-        // Time advance the particle positions
-        step();
+        step();   // advance x from its drift()-perturbed state to x_pred, using `up`/`udiff`
+
+        // ---- Corrector stage: forces/mobility at x_pred ----
+        check_dist();
+        if( !mm_HI && mono_ev ){
+            build_monomer_cell_list();
+        }
+        RHS();
+        mob();
+
+        solve_deterministic_vel(v_det_c);   // v_det_c = M(x_pred) F(x_pred)
+
+        // ---- Final trapezoidal update from x_n ----
+        for(int k = 0; k < consts.nm3nc6; k++){
+            up[k] = 0.5 * (v_det_n[k] + v_det_c[k]) + v_brown[k];
+        }
+        step_from(x_n);   // x <- x_n + up*dt (+ drift term); no RFD probe to undo here
         step_quaternion();
 
         // if (flag){

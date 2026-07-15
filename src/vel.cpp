@@ -83,3 +83,17 @@ void PolyStokes::new_vel(){
 
     return;
 }
+
+void PolyStokes::solve_deterministic_vel(std::vector<double>& out){
+    // Deterministic-only velocity solve for the predictor-corrector scheme: solves the
+    // saddle system with the current `rhs` (holding just the internal forces from
+    // RHS()+mob(), no Brownian noise) into the dedicated Xdet vector, so it never
+    // clobbers the full solve's X (or fext, unlike new_vel() with record_forces). Used
+    // once at x_n (predictor) and once at x_pred (corrector); see run.cpp.
+    solve_saddle(Xdet, false);
+    const PetscScalar *X_array;
+    VecGetArrayRead(Xdet, &X_array);
+    memcpy(out.data(), &X_array[consts.nm3nc11], consts.PetscScalarSize);
+    VecRestoreArrayRead(Xdet, &X_array);
+    return;
+}

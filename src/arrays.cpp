@@ -17,6 +17,11 @@ namespace arrays{
     std::vector<double> u;
     std::vector<double> udiff;
 
+    std::vector<double> x_n;
+    std::vector<double> v_det_n;
+    std::vector<double> v_det_c;
+    std::vector<double> v_brown;
+
     std::vector<double> fext; 
     std::vector<double> uext;
     
@@ -71,6 +76,7 @@ namespace arrays{
 
     Vec X;
     Vec Xd;
+    Vec Xdet;
     Vec rhs;
     Vec W;
 
@@ -112,6 +118,22 @@ namespace arrays{
 
     void initialize_udiff(int size){
         udiff.resize(size, 0.0);
+    };
+
+    void initialize_x_n(int size){
+        x_n.resize(size, 0.0);
+    };
+
+    void initialize_v_det_n(int size){
+        v_det_n.resize(size, 0.0);
+    };
+
+    void initialize_v_det_c(int size){
+        v_det_c.resize(size, 0.0);
+    };
+
+    void initialize_v_brown(int size){
+        v_brown.resize(size, 0.0);
     };
 
     void initialize_uinf(int size){
@@ -411,5 +433,15 @@ namespace arrays{
         VecSet(Xd, 0.0);
         ierr = VecAssemblyBegin(Xd); CHKERRV(ierr);
         ierr = VecAssemblyEnd(Xd); CHKERRV(ierr);
+    }
+
+    void initialize_Xdet(PetscInt nm6nc17){
+        PetscErrorCode ierr;
+        VecCreate(PETSC_COMM_WORLD, &Xdet);
+        VecSetSizes(Xdet, PETSC_DECIDE, nm6nc17);
+        VecSetFromOptions(Xdet);
+        VecSet(Xdet, 0.0);
+        ierr = VecAssemblyBegin(Xdet); CHKERRV(ierr);
+        ierr = VecAssemblyEnd(Xdet); CHKERRV(ierr);
     }
 };

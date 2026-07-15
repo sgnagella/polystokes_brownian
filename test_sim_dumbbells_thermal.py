@@ -409,10 +409,15 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
     N_mono_total = N_dumbbell * N_mono
     Np = N_mono_total + N_trapped
 
-    # Bond / interaction parameters. r0 is set 0.01 above the monomer contact
-    # diameter (2*beta) as a small regularization so bonded beads sit near/above the
-    # monomer-monomer WCA core and are only weakly (ideally not) repelled by it.
-    r0 = 2.0 * beta + 0.01                     # bond rest length
+    # Bond / interaction parameters. r0 must clear the monomer-monomer WCA cutoff
+    # rcut_AA = 2^(1/6)*(2*beta) (~0.2245 at beta=0.1); a bonded pair sitting INSIDE
+    # that cutoff feels a large (~O(100+)) WCA repulsion at every step (mono_ev=True
+    # applies WCA to the bonded pair too). With a soft bond this was absorbed into a
+    # widened equilibrium; with a STIFF bond (kbond>>1) the stiff spring fights that
+    # large WCA force every step, producing violent push-pull oscillation that no
+    # integrator can absorb without addressing the force itself. 0.03 margin above
+    # the cutoff keeps the bonded pair outside the WCA core entirely.
+    r0 = 2.0 ** (1.0 / 6.0) * (2.0 * beta) + 0.03   # bond rest length
     Lmax = 1.5*r0                             # unused (harmonic), kept for the API
     tau = 1000
     kT = 1.0
@@ -471,9 +476,14 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
 
 
 if __name__ == "__main__":
-    dt = 0.0001
-    samplerate = 10; int(1/dt) # sample on brownian timescale of colloid
+    dt = 0.00005
+    samplerate = 15; int(1/dt) # sample on brownian timescale of colloid
     beta = 0.1
-    main(beta=beta, dt=dt, samplerate=samplerate, tmax=1.0, box=[50,50,50],
-         N_dumbbell=10000, kbond=0.1)
+    # kbond=100 -> sigma_bond=sqrt(kT/kbond)=0.1, comparable to r0=0.21 rather than the
+    # colloid radius (kbond=1 gave sigma_bond=1.0, so bonded monomers routinely wandered
+    # a full colloid-radius and overshot into the colloid). The predictor-corrector step
+    # (run.cpp) damps the resulting stiffer-bond overshoot that a plain Euler step would
+    # otherwise let tunnel a monomer through the colloid's WCA barrier.
+    main(beta=beta, dt=dt, samplerate=samplerate, tmax=1.0, box=[30,30,30],
+         N_dumbbell=100, kbond=100.0)
 

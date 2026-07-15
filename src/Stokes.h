@@ -109,7 +109,17 @@ private:
     void build_slip_vel_schur();
     void schur_sqrt_lanczos(Mat Bcm, Mat Ccc, double beta, Vec b, Vec out, PetscInt kmax);
     void new_vel();
+    // Solve the saddle system with the CURRENT rhs/A (assumed set up by a prior
+    // RHS()+mob() call, with rhs holding forces only -- i.e. called before
+    // solve_slip_vel() adds Brownian noise) and extract the deterministic velocity
+    // block (size nm3nc6) into `out`. Used by the predictor-corrector step in run().
+    void solve_deterministic_vel(std::vector<double>& out);
     void step();
+    // Advance positions from a saved, unperturbed base position x_base using the
+    // current `up` (velocity) and `udiff` (RFD drift estimate, already computed at
+    // x_base) -- used for the predictor-corrector's final corrector update, where
+    // (unlike step()) there is no RFD probe to undo since x_base is already clean.
+    void step_from(const std::vector<double>& x_base);
     void step_quaternion();
     void write_configuration();
     void write_quaternions();
