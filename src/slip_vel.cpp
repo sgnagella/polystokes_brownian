@@ -78,6 +78,109 @@ void PolyStokes::solve_slip_vel(){
     return;
 }
 
+void PolyStokes::sync_mcc_schur_correction(){
+    // Refresh Mcc_block = Mcc_base + adaptive eigenvalue-floor correction of the colloid
+    // Schur complement S = M^cc - beta*M^cm*(M^cm)^T, using the CURRENT Mcm_block (just
+    // rebuilt this stage by mob()). Mcc_block otherwise persists whatever correction was
+    // last applied -- possibly on a PREVIOUS step, at a different position -- since
+    // fill_self() only resets it once, at t=0. Called once per stage, right after mob()
+    // and before any solve reads Mcc_block, so solve_deterministic_vel() and the
+    // Brownian noise sample (build_slip_vel_schur(), which reuses the schur_Q /
+    // schur_lambda_corrected cache filled here) agree on M^cc within that stage.
+    //
+    // No-op when mm_HI (the dense grand-mobility path doesn't use this arrowhead block)
+    // or when nc11 exceeds the Lanczos crossover (that path samples noise without
+    // correcting Mcc_block -- see schur_sqrt_lanczos's note).
+    if (mm_HI) return;
+
+    PetscInt nc11 = consts.nc11;
+    PetscInt lanczos_threshold = 64;
+    { const char *e = std::getenv("POLYSTOKES_LANCZOS_NC"); if (e) lanczos_threshold = atoi(e); }
+    if (nc11 > lanczos_threshold) return;
+
+    PetscErrorCode ierr;
+    double beta = pinfo.beta;
+
+    // S = M^cc - beta M^cm M^mc = Mcc_base - beta Bcm Bcm^T, built into the persistent
+    // workspace Smat: S = Q diag(lambda) Q^T.
+    Mat P;
+    ierr = MatMatTransposeMult(Mcm_block, Mcm_block, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &P); CHKERRV(ierr);
+    ierr = MatScale(P, -beta); CHKERRV(ierr);
+    ierr = MatAXPY(P, 1.0, Mcc_base, SAME_NONZERO_PATTERN); CHKERRV(ierr);
+    ierr = MatCopy(P, Smat, SAME_NONZERO_PATTERN); CHKERRV(ierr);
+    ierr = MatDestroy(&P); CHKERRV(ierr);
+
+    PetscScalar *Sarr;
+    ierr = MatDenseGetArray(Smat, &Sarr); CHKERRV(ierr);   // column-major, lda = nc11
+
+    PetscBLASInt n, lda, lwork, info;
+    ierr = PetscBLASIntCast(nc11, &n); CHKERRV(ierr);
+    lda = n;
+    std::vector<PetscReal> w(nc11);          // eigenvalues, ascending
+    const char jobz = 'V', uplo = 'U';
+
+    // optimal workspace query, then the actual decomposition (overwrites Sarr with Q)
+    PetscScalar work_query;
+    lwork = -1;
+    LAPACKsyev_(&jobz, &uplo, &n, Sarr, &lda, w.data(), &work_query, &lwork, &info);
+    ierr = PetscBLASIntCast((PetscInt)PetscRealPart(work_query), &lwork); CHKERRV(ierr);
+    std::vector<PetscScalar> work(lwork);
+    LAPACKsyev_(&jobz, &uplo, &n, Sarr, &lda, w.data(), work.data(), &lwork, &info);
+    if (info != 0) {
+        PetscPrintf(PETSC_COMM_WORLD, "Schur eigendecomposition (syev) failed, info=%d\n", (int)info);
+    }
+    // Sarr columns now hold the eigenvectors Q: Q[i,j] = Sarr[i + j*lda].
+
+    // Adaptive, per-eigen-direction correction: lambda_corrected_j = max(lambda_j, eps);
+    // delta_j = lambda_corrected_j - lambda_j is zero for any direction that was already
+    // >= eps, and only pushes up the directions that actually need it. The correction
+    // Delta = Q diag(delta) Q^T is added onto Mcc_block (reset from Mcc_base first, so
+    // nothing accumulates step to step).
+    const PetscReal eps = 0.1;   // small positive margin, not a large blanket shift
+    std::vector<PetscReal> delta(nc11);
+    PetscInt nneg = 0;
+    for (PetscInt j = 0; j < nc11; j++) {
+        PetscReal lam = PetscRealPart(w[j]);
+        delta[j] = (lam < eps) ? (eps - lam) : 0.0;
+        if (lam < 0.0) nneg++;
+    }
+
+    ierr = MatCopy(Mcc_base, Mcc_block, SAME_NONZERO_PATTERN); CHKERRV(ierr);
+    {
+        PetscScalar *ccarr;
+        ierr = MatDenseGetArray(Mcc_block, &ccarr); CHKERRV(ierr);   // column-major, lda = nc11
+        for (PetscInt a = 0; a < nc11; a++) {
+            for (PetscInt b = 0; b < nc11; b++) {
+                PetscScalar corr = 0.0;
+                for (PetscInt j = 0; j < nc11; j++) {
+                    if (delta[j] == 0.0) continue;
+                    corr += Sarr[a + j*lda] * delta[j] * Sarr[b + j*lda];
+                }
+                ccarr[a + b*nc11] += corr;
+            }
+        }
+        ierr = MatDenseRestoreArray(Mcc_block, &ccarr); CHKERRV(ierr);
+    }
+
+    // Cache Q and the floored spectrum for build_slip_vel_schur() to reuse (avoids a
+    // second syev call for the noise sample).
+    schur_Q.assign(Sarr, Sarr + (size_t)nc11 * nc11);
+    schur_lambda_corrected.resize(nc11);
+    for (PetscInt j = 0; j < nc11; j++) {
+        schur_lambda_corrected[j] = PetscRealPart(w[j]) + delta[j];
+    }
+
+    ierr = MatDenseRestoreArray(Smat, &Sarr); CHKERRV(ierr);
+
+    if (nneg > 0) {
+        PetscPrintf(PETSC_COMM_WORLD,
+            "[schur] corrected %D negative Schur eigenvalue(s), most negative = %.6e "
+            "(truncated far-field mobility not SPD)\n", (PetscInt)nneg, (double)PetscRealPart(w[0]));
+    }
+
+    return;
+}
+
 void PolyStokes::build_slip_vel_schur(){
     // Block-Cholesky sampling of the far-field Brownian slip velocity for the
     // mm_HI == false case. With the monomer block A = M^mm = beta_inv*I, the
@@ -147,81 +250,23 @@ void PolyStokes::build_slip_vel_schur(){
         schur_sqrt_lanczos(Mcm_block, Mcc_block, beta, xi_c, uc, /*kmax=*/40);
     }
     else {
-        // Dense path: S = M^cc - beta M^cm M^mc, built from the PRISTINE Mcc_base (never
-        // shifted), into the persistent workspace Smat: S = Q diag(lambda) Q^T.
-        Mat P;
-        ierr = MatMatTransposeMult(Mcm_block, Mcm_block, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &P); CHKERRV(ierr);
-        ierr = MatScale(P, -beta); CHKERRV(ierr);
-        ierr = MatAXPY(P, 1.0, Mcc_base, SAME_NONZERO_PATTERN); CHKERRV(ierr);
-        ierr = MatCopy(P, Smat, SAME_NONZERO_PATTERN); CHKERRV(ierr);
-        ierr = MatDestroy(&P); CHKERRV(ierr);
-
-        PetscScalar *Sarr;
-        ierr = MatDenseGetArray(Smat, &Sarr); CHKERRV(ierr);   // column-major, lda = nc11
-
-        PetscBLASInt n, lda, lwork, info;
-        ierr = PetscBLASIntCast(nc11, &n); CHKERRV(ierr);
-        lda = n;
-        std::vector<PetscReal> w(nc11);          // eigenvalues, ascending
-        const char jobz = 'V', uplo = 'U';
-
-        // optimal workspace query, then the actual decomposition (overwrites Sarr with Q)
-        PetscScalar work_query;
-        lwork = -1;
-        LAPACKsyev_(&jobz, &uplo, &n, Sarr, &lda, w.data(), &work_query, &lwork, &info);
-        ierr = PetscBLASIntCast((PetscInt)PetscRealPart(work_query), &lwork); CHKERRV(ierr);
-        std::vector<PetscScalar> work(lwork);
-        LAPACKsyev_(&jobz, &uplo, &n, Sarr, &lda, w.data(), work.data(), &lwork, &info);
-        if (info != 0) {
-            PetscPrintf(PETSC_COMM_WORLD, "Schur eigendecomposition (syev) failed, info=%d\n", (int)info);
-        }
-        // Sarr columns now hold the eigenvectors Q: Q[i,j] = Sarr[i + j*lda].
-
-        // Adaptive, per-eigen-direction correction (replaces the earlier flat MatShift):
-        // lambda_corrected_j = max(lambda_j, eps); delta_j = lambda_corrected_j - lambda_j
-        // is zero for any direction that was already >= eps, and only pushes up the
-        // directions that actually need it. The correction Delta = Q diag(delta) Q^T is
-        // added onto the shared Mcc_block (reset from Mcc_base first, so nothing
-        // accumulates step to step) -- since Mcc_block is what ArrowheadMult/
-        // ArrowheadGetDiagonal read, this step's deterministic solve (run later in the
-        // main loop, after solve_slip_vel) sees the identical corrected M^cc, keeping
-        // fluctuation-dissipation consistent (see project discussion).
-        const PetscReal eps = 0.1;   // small positive margin, not a large blanket shift
-        std::vector<PetscReal> delta(nc11);
-        PetscInt nneg = 0;
-        for (PetscInt j = 0; j < nc11; j++) {
-            PetscReal lam = PetscRealPart(w[j]);
-            delta[j] = (lam < eps) ? (eps - lam) : 0.0;
-            if (lam < 0.0) nneg++;
-        }
-
-        ierr = MatCopy(Mcc_base, Mcc_block, SAME_NONZERO_PATTERN); CHKERRV(ierr);
-        {
-            PetscScalar *ccarr;
-            ierr = MatDenseGetArray(Mcc_block, &ccarr); CHKERRV(ierr);   // column-major, lda = nc11
-            for (PetscInt a = 0; a < nc11; a++) {
-                for (PetscInt b = 0; b < nc11; b++) {
-                    PetscScalar corr = 0.0;
-                    for (PetscInt j = 0; j < nc11; j++) {
-                        if (delta[j] == 0.0) continue;
-                        corr += Sarr[a + j*lda] * delta[j] * Sarr[b + j*lda];
-                    }
-                    ccarr[a + b*nc11] += corr;
-                }
-            }
-            ierr = MatDenseRestoreArray(Mcc_block, &ccarr); CHKERRV(ierr);
-        }
+        // Dense path: Mcc_block and the Schur eigendecomposition (schur_Q,
+        // schur_lambda_corrected) were already refreshed for the CURRENT position by
+        // sync_mcc_schur_correction() -- called right after mob(), before any solve
+        // reads Mcc_block (see run.cpp) -- so the deterministic solve and this noise
+        // sample agree on M^cc. Reuse that cache here rather than repeating the syev.
+        PetscInt lda = nc11;
+        const PetscScalar *Sarr = schur_Q.data();
 
         const PetscScalar *xc;
         ierr = VecGetArrayRead(xi_c, &xc); CHKERRV(ierr);
 
-        // y = diag(sqrt(lambda_corrected)) * (Q^T xi_c)   (lambda_corrected = lambda + delta)
+        // y = diag(sqrt(lambda_corrected)) * (Q^T xi_c)
         std::vector<PetscScalar> y(nc11, 0.0);
         for (PetscInt j = 0; j < nc11; j++) {
             PetscScalar yj = 0.0;
             for (PetscInt i = 0; i < nc11; i++) yj += Sarr[i + j*lda] * xc[i];
-            PetscReal lam_corrected = PetscRealPart(w[j]) + delta[j];
-            y[j] = PetscSqrtReal(lam_corrected) * yj;
+            y[j] = PetscSqrtReal(schur_lambda_corrected[j]) * yj;
         }
         ierr = VecRestoreArrayRead(xi_c, &xc); CHKERRV(ierr);
 
@@ -234,14 +279,6 @@ void PolyStokes::build_slip_vel_schur(){
             ucarr[i] += si;
         }
         ierr = VecRestoreArray(uc, &ucarr); CHKERRV(ierr);
-
-        ierr = MatDenseRestoreArray(Smat, &Sarr); CHKERRV(ierr);
-
-        if (nneg > 0) {
-            PetscPrintf(PETSC_COMM_WORLD,
-                "[schur] corrected %D negative Schur eigenvalue(s), most negative = %.6e "
-                "(truncated far-field mobility not SPD)\n", (PetscInt)nneg, (double)PetscRealPart(w[0]));
-        }
     }
 
     // Mcm_block / Mcc_block are persistent (owned by arrays); do not destroy here.

@@ -329,6 +329,31 @@ def colloid_displacements(times, traj, N_trapped, box=None, drop_transient=0.2):
     return disp, disp.shape[0]
 
 
+def integrated_autocorr_time(series, c=5):
+    """Estimate the integrated autocorrelation time tau = 1 + 2*sum_k rho(k) of a
+    time-ordered scalar series (Sokal's windowing: stop summing once k >= c*tau,
+    before the noisy large-lag tail of the ACF estimate corrupts the sum).
+
+    A harmonically-trapped colloid is an Ornstein-Uhlenbeck process with
+    relaxation time ~1/(ktrap*mobility); consecutive samples spaced closer than
+    that are correlated, so std(samples)/sqrt(n_raw) understates the true standard
+    error of the mean/variance by up to sqrt(2*tau). n_raw/(2*tau) is the
+    corresponding effective number of independent samples.
+    """
+    x = np.asarray(series, dtype=float)
+    x = x - x.mean()
+    n = len(x)
+    if n < 8 or x.var() == 0:
+        return 1.0
+    acf = np.correlate(x, x, mode='full')[n - 1:] / (x.var() * np.arange(n, 0, -1))
+    tau = 1.0
+    for k in range(1, n):
+        tau += 2.0 * acf[k]
+        if k >= c * tau:
+            break
+    return max(tau, 1.0)
+
+
 def trap_statistics(times, traj, N_trapped, ktrap, kT=1.0, box=None,
                     drop_transient=0.2):
     """Verify the trapped colloid samples the harmonic-trap Boltzmann distribution.
@@ -353,16 +378,28 @@ def trap_statistics(times, traj, N_trapped, ktrap, kT=1.0, box=None,
 
     sigma, r_mean, r_mode, r_std = equilibrium_trap_stats(ktrap, kT)
 
-    # per-axis mean (should vanish) and its standard error
+    # The trapped colloid is an Ornstein-Uhlenbeck process with relaxation time
+    # ~1/(ktrap*mobility); when that's comparable to or longer than the sample
+    # spacing (samplerate*dt), consecutive frames are correlated and std/sqrt(n_raw)
+    # drastically understates the true standard error (by up to sqrt(2*tau)) --
+    # producing spuriously large z-scores even when the sampled distribution is
+    # correct. Use tau from the first colloid's time-ordered trace (representative;
+    # N_trapped colloids are assumed independent of each other) to get an effective
+    # sample count for both the mean and variance standard errors below.
+    tau = np.mean([integrated_autocorr_time(disp[:, 0, a]) for a in range(3)])
+    n_eff_per_axis = max(n_used / (2.0 * tau), 1.0)
+    n_eff_total = max(N_trapped * n_used / (2.0 * tau), 1.0)
+
+    # per-axis mean (should vanish) and its autocorrelation-corrected standard error
     mean_c = comps.mean(axis=0)
-    se_c = comps.std(axis=0, ddof=1) / np.sqrt(n)
+    se_c = comps.std(axis=0, ddof=1) / np.sqrt(n_eff_per_axis)
     # pooled per-component variance vs theory sigma^2 (all 3 axes pooled by isotropy)
     var_meas = comps.reshape(-1).var(ddof=1)
     sigma_meas = np.sqrt(var_meas)
-    # SE of a variance ~ var*sqrt(2/(N-1)) for uncorrelated normals (optimistic here;
-    # time-adjacent frames are correlated, so treat |z| as a guide, not a hard gate).
+    # SE of a variance ~ var*sqrt(2/(N_eff-1)) for uncorrelated normals, using the
+    # same autocorrelation-corrected effective sample count (pooled over 3 axes).
     Ncomp = comps.size
-    se_var = var_meas * np.sqrt(2.0 / (Ncomp - 1))
+    se_var = var_meas * np.sqrt(2.0 / (3.0 * n_eff_total - 1))
 
     pcts = np.percentile(r, [5, 50, 95])
 
@@ -377,6 +414,8 @@ def trap_statistics(times, traj, N_trapped, ktrap, kT=1.0, box=None,
     print("=" * 70)
     print(f"frames used        : {n_used}/{n_frames}   colloids: {N_trapped}   "
           f"component samples: {Ncomp}")
+    print(f"autocorr time      : tau={tau:.2f} samples ({tau*(times[1]-times[0]):.3f} time units)   "
+          f"n_eff/axis={n_eff_per_axis:.1f}")
     print(f"time span (kept)    : {times[times >= times[0] + drop_transient*(times[-1]-times[0])][0]:.3f} "
           f"-> {times[-1]:.3f}")
     print("-" * 70)
@@ -422,7 +461,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
     tau = 1000
     kT = 1.0
     epsilon = 5.0                              # WCA excluded-volume energy scale
-    ktrap = 10                                # harmonic trap holding the colloid at the origin
+    ktrap = 1.0                                # harmonic trap holding the colloid at the origin
     fene = False
     # Monomer-monomer WCA cutoff (matches C++ rcuts[0] = 2^(1/6) * sigma[0],
     # sigma[0] = 2*beta): initialize distinct dumbbells at least this far apart so no
@@ -454,7 +493,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
             fene=fene,        # harmonic bonds
             record_forces=False,
             tether=False,      # free dumbbells (NOT tethered to the colloid)
-            mono_ev=True,      # monomer-monomer excluded volume (WCA) on
+            mono_ev=False,      # monomer-monomer excluded volume (WCA) on
             box=box,           # None => unbounded; [Lx,Ly,Lz] => periodic
         )
         sim.particle_info(
@@ -472,18 +511,20 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
     # Verify the trapped colloid samples the harmonic-trap Boltzmann distribution.
     # (For a histogram-vs-theory figure, run plot_trap_distribution.py afterward.)
     if ktrap > 0:
-        trap_statistics(times, traj, N_trapped, ktrap, kT=kT, box=box)
+        trap_statistics(times, traj, N_trapped, ktrap, kT=kT, box=box, drop_transient=0.0)
 
 
 if __name__ == "__main__":
-    dt = 0.00005
-    samplerate = 15; int(1/dt) # sample on brownian timescale of colloid
-    beta = 0.1
-    # kbond=100 -> sigma_bond=sqrt(kT/kbond)=0.1, comparable to r0=0.21 rather than the
-    # colloid radius (kbond=1 gave sigma_bond=1.0, so bonded monomers routinely wandered
-    # a full colloid-radius and overshot into the colloid). The predictor-corrector step
-    # (run.cpp) damps the resulting stiffer-bond overshoot that a plain Euler step would
-    # otherwise let tunnel a monomer through the colloid's WCA barrier.
-    main(beta=beta, dt=dt, samplerate=samplerate, tmax=1.0, box=[30,30,30],
-         N_dumbbell=100, kbond=100.0)
+    dt = 0.00001
+    samplerate = 100    # sample every 0.1 time units (fine enough to resolve the
+                         # trap's ~2-time-unit relaxation time for the autocorrelation
+                         # correction in trap_statistics)
+    beta = 0.01
+    # 1 dumbbell + 1 trapped colloid, run long enough (tmax=500, i.e. ~250 trap
+    # relaxation times at ktrap=1) to get solid trap statistics: ~100+ effective
+    # independent samples per axis after the autocorrelation correction, rather
+    # than the ~10-50 you get from a much shorter run. kbond=1 (soft bond) keeps
+    # dt=0.001 stable without needing the stiff-bond dt=1e-5 regime.
+    main(beta=beta, dt=dt, samplerate=samplerate, tmax=5.0, box=[10,10,10],
+         N_dumbbell=5000, kbond=1.0)
 

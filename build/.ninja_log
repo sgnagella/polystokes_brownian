@@ -1,0 +1,22 @@
+# ninja log v7
+2	875	1784154666987564100	CMakeFiles/PolyStokes.dir/src/multi_arrays_initialize.cpp.o	7fe23ed7fa5127c3
+2	1376	1784154666986752800	CMakeFiles/PolyStokes.dir/src/arrays.cpp.o	82242fad04b2ac2b
+4	1501	1784154666988477400	CMakeFiles/PolyStokes.dir/src/matfree_A.cpp.o	beb374b0a2a72815
+5	4545	1784154666989970400	CMakeFiles/PolyStokes.dir/src/rhs.cpp.o	6e50a52fb27e3ce4
+5	4927	1784154666993367100	CMakeFiles/PolyStokes.dir/src/drift.cpp.o	59ef06ac7733c3c6
+2	4996	1784154666986933300	CMakeFiles/PolyStokes.dir/src/check_dist.cpp.o	ce065213ee8e0217
+2	5120	1784154666986365800	CMakeFiles/PolyStokes.dir/src/run.cpp.o	e26e4630ada1394a
+2	5176	1784154666986548000	CMakeFiles/PolyStokes.dir/src/init.cpp.o	8889ab4858f9aa7b
+1	5343	1784154666986118100	CMakeFiles/PolyStokes.dir/src/Stokes.cpp.o	10fed3ba2e7cc6b0
+5176	5417	1784154672161070900	CMakeFiles/PolyStokes.dir/src/box.cpp.o	6859b91052e238bb
+4927	5743	1784154671912240400	CMakeFiles/PolyStokes.dir/src/quat.cpp.o	962a7bb8a3a65b
+4996	5944	1784154671981290300	CMakeFiles/PolyStokes.dir/src/pair_interaction.cpp.o	156520b97ad5838b
+3	6045	1784154666988024200	CMakeFiles/PolyStokes.dir/src/mob.cpp.o	d3a001c8f82e30c1
+1385	6380	1784154668369846300	CMakeFiles/PolyStokes.dir/src/vel.cpp.o	3a122d00b9cb4b3
+906	6385	1784154667890872700	CMakeFiles/PolyStokes.dir/src/slip_vel.cpp.o	54a2e4ebb7b1c7b0
+1501	6484	1784154668486322300	CMakeFiles/PolyStokes.dir/src/traj.cpp.o	a8da2e51a725a4d6
+4553	7877	1784154671537754000	CMakeFiles/PolyStokes.dir/src/write_configuration.cpp.o	ffbe944699628067
+5125	8156	1784154672109712700	CMakeFiles/PolyStokes.dir/src/cell_list.cpp.o	585baae7214761f0
+5344	8496	1784154672328384200	CMakeFiles/PolyStokes.dir/src/cleanup.cpp.o	46405e547655871a
+5418	9669	1784154672402450400	CMakeFiles/PolyStokes.dir/src/bindings.cpp.o	385408713b3e9184
+9670	11522	1784154676654923100	PolyStokes.cpython-311-x86_64-linux-gnu.so	8c071d91b229d770

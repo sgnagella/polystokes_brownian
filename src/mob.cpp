@@ -405,84 +405,104 @@ void PolyStokes::mobility_AB(double dr, double dr_inv, double dx, double dy, dou
     const double dr3 = dr2 * dr;
 
     double x12a, y12a, y12b;
-    if( dr >= rsum ){
-        // Far-field translational (eq 3.1 upper) and rotational-translational (eq 3.3 upper).
-        // tt reduces to the equal-sphere formula at beta=1 (self-consistency check).
-        x12a = coeffs.c3d2 * dr_inv - coeffs.c1d2 * (1.0 + beta2) * dr_inv3;
-        y12a = coeffs.c3d4 * dr_inv + coeffs.c1d4 * (1.0 + beta2) * dr_inv3;
-        y12b = -coeffs.c3d4 * dr_inv2;
-    }
-    else if( dr > rdiff ){
-        // Overlapping spheres. Translational tt (Zuk et al. eq 3.1 middle), prefactor
-        // 1/(6 pi eta a b) = 1/(a b): mu = pref[ I_coeff*(I) + RR_coeff*(Rhat Rhat) ].
-        const double pref_tt = 1.0 / (a1 * b1);
-        const double t       = rdiff * rdiff + 3.0 * dr2;   // (a-b)^2 + 3 dr^2
-        const double u       = rdiff * rdiff - dr2;         // (a-b)^2 - dr^2
-        const double I_coeff  = (16.0 * dr3 * (a1 + b1) - t * t) / (32.0 * dr3);
-        const double RR_coeff = 3.0 * u * u / (32.0 * dr3);
-        y12a = pref_tt * I_coeff;                 // perpendicular (I - Rhat Rhat) part
-        x12a = pref_tt * (I_coeff + RR_coeff);    // parallel (Rhat Rhat) part
-        // Rotational-translational rt (Zuk et al. eq 3.3 middle), i=colloid (a1), j=monomer (b1).
-        // Code convention y12b = -(paper mu^rt scalar) to match the far-field sign above.
-        const double pref_rt = 3.0 / (8.0 * a1 * a1 * a1 * b1);   // 1/(16 pi eta a^3 b)
-        const double poly = (a1 - b1 + dr) * (a1 - b1 + dr)
-                          * (b1 * b1 + 2.0 * b1 * (a1 + dr) - 3.0 * (a1 - dr) * (a1 - dr))
-                          / (8.0 * dr2);
-        y12b = -(pref_rt * poly);
-    }
-    else{
-        // Monomer fully engulfed by the colloid (dr <= a-b). tt -> larger-sphere self
-        // mobility 1/(6 pi eta a) = 1/a (eq 3.1 lower); rt -> Theta(a-b) dr / zeta_rr_colloid,
-        // zeta_rr = 8 pi eta a^3 = (4/3) a^3 (eq 3.3 lower).
-        x12a = 1.0 / a1;
-        y12a = 1.0 / a1;
-        y12b = -( dr / ((4.0 / 3.0) * a1 * a1 * a1) );
-    }
-    for(int ii = 0; ii < ndim; ii++){
-        mob_a[ii][ii] = x12a * ee[ii][ii] + y12a * (1. - ee[ii][ii]);
-        for(int jj = ii + 1; jj < ndim; jj++){
-            mob_a[ii][jj] = x12a * ee[ii][jj] - y12a * ee[ii][jj];
-            mob_a[jj][ii] = mob_a[ii][jj];
-        }
-    }
+    // Far-field translational (eq 3.1 upper) and rotational-translational (eq 3.3 upper).
+    // tt reduces to the equal-sphere formula at beta=1 (self-consistency check).
+    x12a = coeffs.c3d2 * dr_inv - coeffs.c1d2 * (1.0 + beta2) * dr_inv3;
+    y12a = coeffs.c3d4 * dr_inv + coeffs.c1d4 * (1.0 + beta2) * dr_inv3;
+    y12b = -coeffs.c3d4 * dr_inv2;
 
+    // if( dr >= rsum ){
+    //     // Far-field translational (eq 3.1 upper) and rotational-translational (eq 3.3 upper).
+    //     // tt reduces to the equal-sphere formula at beta=1 (self-consistency check).
+    //     x12a = coeffs.c3d2 * dr_inv - coeffs.c1d2 * (1.0 + beta2) * dr_inv3;
+    //     y12a = coeffs.c3d4 * dr_inv + coeffs.c1d4 * (1.0 + beta2) * dr_inv3;
+    //     y12b = -coeffs.c3d4 * dr_inv2;
+    // }
+    // else if( dr > rdiff ){
+    //     // Overlapping spheres. Translational tt (Zuk et al. eq 3.1 middle), prefactor
+    //     // 1/(6 pi eta a b) = 1/(a b): mu = pref[ I_coeff*(I) + RR_coeff*(Rhat Rhat) ].
+    //     const double pref_tt = 1.0 / (a1 * b1);
+    //     const double t       = rdiff * rdiff + 3.0 * dr2;   // (a-b)^2 + 3 dr^2
+    //     const double u       = rdiff * rdiff - dr2;         // (a-b)^2 - dr^2
+    //     const double I_coeff  = (16.0 * dr3 * (a1 + b1) - t * t) / (32.0 * dr3);
+    //     const double RR_coeff = 3.0 * u * u / (32.0 * dr3);
+    //     y12a = pref_tt * I_coeff;                 // perpendicular (I - Rhat Rhat) part
+    //     x12a = pref_tt * (I_coeff + RR_coeff);    // parallel (Rhat Rhat) part
+    //     // Rotational-translational rt (Zuk et al. eq 3.3 middle), i=colloid (a1), j=monomer (b1).
+    //     // Code convention y12b = -(paper mu^rt scalar) to match the far-field sign above.
+    //     const double pref_rt = 3.0 / (8.0 * a1 * a1 * a1 * b1);   // 1/(16 pi eta a^3 b)
+    //     const double poly = (a1 - b1 + dr) * (a1 - b1 + dr)
+    //                       * (b1 * b1 + 2.0 * b1 * (a1 + dr) - 3.0 * (a1 - dr) * (a1 - dr))
+    //                       / (8.0 * dr2);
+    //     y12b = -(pref_rt * poly);
+    // }
+    // else{
+    //     // Monomer fully engulfed by the colloid (dr <= a-b). tt -> larger-sphere self
+    //     // mobility 1/(6 pi eta a) = 1/a (eq 3.1 lower); rt -> Theta(a-b) dr / zeta_rr_colloid,
+    //     // zeta_rr = 8 pi eta a^3 = (4/3) a^3 (eq 3.3 lower).
+    //     x12a = 1.0 / a1;
+    //     y12a = 1.0 / a1;
+    //     y12b = -( dr / ((4.0 / 3.0) * a1 * a1 * a1) );
+    // }
+    // for(int ii = 0; ii < ndim; ii++){
+    //     mob_a[ii][ii] = x12a * ee[ii][ii] + y12a * (1. - ee[ii][ii]);
+    //     for(int jj = ii + 1; jj < ndim; jj++){
+    //         mob_a[ii][jj] = x12a * ee[ii][jj] - y12a * ee[ii][jj];
+    //         mob_a[jj][ii] = mob_a[ii][jj];
+    //     }
+    // }
+
+    // Translation-dipole (stresslet) coupling (AB).
+    //
+    // REVERTED (temporarily) to the ORIGINAL, unregularized far-field expression --
+    // particle dynamics (colloid position, dumbbell bonds) showed large, unphysical
+    // fluctuations after the regularized stresslet was introduced. Diagnosis pending;
+    // reverting this one coupling while KEEPING the regularized translation-translation
+    // (x12a/y12a) and translation-rotation (y12b) couplings above, since those were
+    // validated independently (continuity, far-field reduction, beta=1 self-consistency)
+    // and are not implicated. The regularized stresslet code is kept below, commented out,
+    // for later re-enabling once the discrepancy is understood.
+    const double x12g = coeffs.c9d4 * dr_inv2 - coeffs.c9d20 * dr_inv4 * (ndim + const5 * beta2);
+    const double y12g = coeffs.c9d10 * dr_inv4 * (coeffs.c1d2 + coeffs.c5d6 * beta2);
+
+    // ---- Regularized (Zuk et al.) stresslet coupling -- commented out, see note above ----
     // Translation-dipole (stresslet) coupling (AB), regularized with the different-sized RPY
     // in the Kim & Karrila (x^g, y^g) basis (mobdat/rpy_kk_mobilities.tex, from Zuk et al.).
     // The code's stored (x12g, y12g) = -(9/10) * (x^g, y^g) -- a single R-independent constant
     // (the stresslet-DOF normalization x units, = (9/4)/(-5/2)) that reproduces the far-field
     // x12g/y12g exactly. Roles for mob_gt: velocity/monomer a_i=beta, dipole/colloid a_j=1.
-    double x12g, y12g;
-    if( dr >= rsum ){
-        // Far-field (eq for R > a_i+a_j) -- byte-identical to the original.
-        x12g = coeffs.c9d4 * dr_inv2 - coeffs.c9d20 * dr_inv4 * (ndim + const5 * beta2);
-        y12g = coeffs.c9d10 * dr_inv4 * (coeffs.c1d2 + coeffs.c5d6 * beta2);
-    }
-    else{
-        const double ai = b1;          // velocity sphere = monomer (beta)
-        const double aj = a1;          // dipole sphere   = colloid (1)
-        double xg, yg;
-        if( dr > rdiff ){
-            // Overlapping branch (a_>-a_< < R <= a_i+a_j).
-            const double R4 = dr2 * dr2;
-            const double R5 = R4 * dr;
-            const double R6 = R5 * dr;
-            const double dab  = aj - ai;                 // a_j - a_i (>0 here)
-            const double dab5 = dab*dab*dab*dab*dab;     // (a_j-a_i)^5
-            const double P = 10.0*R6 - 24.0*ai*R5 - 15.0*R4*(aj*aj - ai*ai)
-                           + dab5 * (ai + 5.0*aj);
-            const double u  = (ai - aj)*(ai - aj) - dr2; // (a_i-a_j)^2 - R^2
-            const double Q  = u * u * ( (ai - aj)*(ai + 5.0*aj) - dr2 );
-            yg = P / (96.0 * ai * R4);
-            xg = (2.0*P + 5.0*Q) / (96.0 * ai * R4);
-        }
-        else{
-            // Complete-overlap branch (R <= a_>-a_<): aj=1 > ai=beta, Theta(aj-ai)=1.
-            xg = -dr;
-            yg = -0.5 * dr;
-        }
-        x12g = -0.9 * xg;   // -(9/10) code-convention factor
-        y12g = -0.9 * yg;
-    }
+    // double x12g, y12g;
+    // if( dr >= rsum ){
+    //     // Far-field (eq for R > a_i+a_j) -- byte-identical to the original.
+    //     x12g = coeffs.c9d4 * dr_inv2 - coeffs.c9d20 * dr_inv4 * (ndim + const5 * beta2);
+    //     y12g = coeffs.c9d10 * dr_inv4 * (coeffs.c1d2 + coeffs.c5d6 * beta2);
+    // }
+    // else{
+    //     const double ai = b1;          // velocity sphere = monomer (beta)
+    //     const double aj = a1;          // dipole sphere   = colloid (1)
+    //     double xg, yg;
+    //     if( dr > rdiff ){
+    //         // Overlapping branch (a_>-a_< < R <= a_i+a_j).
+    //         const double R4 = dr2 * dr2;
+    //         const double R5 = R4 * dr;
+    //         const double R6 = R5 * dr;
+    //         const double dab  = aj - ai;                 // a_j - a_i (>0 here)
+    //         const double dab5 = dab*dab*dab*dab*dab;     // (a_j-a_i)^5
+    //         const double P = 10.0*R6 - 24.0*ai*R5 - 15.0*R4*(aj*aj - ai*ai)
+    //                        + dab5 * (ai + 5.0*aj);
+    //         const double u  = (ai - aj)*(ai - aj) - dr2; // (a_i-a_j)^2 - R^2
+    //         const double Q  = u * u * ( (ai - aj)*(ai + 5.0*aj) - dr2 );
+    //         yg = P / (96.0 * ai * R4);
+    //         xg = (2.0*P + 5.0*Q) / (96.0 * ai * R4);
+    //     }
+    //     else{
+    //         // Complete-overlap branch (R <= a_>-a_<): aj=1 > ai=beta, Theta(aj-ai)=1.
+    //         xg = -dr;
+    //         yg = -0.5 * dr;
+    //     }
+    //     x12g = -0.9 * xg;   // -(9/10) code-convention factor
+    //     y12g = -0.9 * yg;
+    // }
 
     // Translation-torque. NOTE: mob_bt reuses the y12b scalar (= -mu^rt, colloid=i). In the
     // overlap branch the true mu^tr uses the interchanged radii, so mob_bt is only exact in

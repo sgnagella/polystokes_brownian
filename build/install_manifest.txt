@@ -1,0 +1,1 @@
+/tmp/tmpe1pmsbb1/wheel/platlib/./PolyStokes.cpython-311-x86_64-linux-gnu.so

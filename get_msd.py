@@ -27,9 +27,9 @@ def getMSDTensor(r):
         msds[i,5] = np.mean(diffs_y*diffs_z)
     return msds
 
-beta = 0.1
+beta = 0.01
 fene = False
-input_file = f"data/dumbbells_thermal_beta_{beta}_fene_{fene}/trajectory.gsd"
+input_file = f"data/test_dumbbells_thermal_beta_{beta}_fene_{fene}/trajectory.gsd"
 
 def main(): 
     # Load the trajectory of the last particle
@@ -42,7 +42,7 @@ def main():
     msd_tensor = getMSDTensor(traj_colloid)
 
     # Save the MSD tensor to a file
-    output_file = f"data/dumbbells_thermal_beta_{beta}_fene_{fene}/msd_tensor.npy"
+    output_file = f"data/test_dumbbells_thermal_beta_{beta}_fene_{fene}/msd_tensor.npy"
     np.save(output_file, msd_tensor)
     print(f"MSD tensor saved to {output_file}")
 
@@ -57,11 +57,11 @@ def main():
     plt.xlabel('Time lag')
     plt.ylabel('MSD tensor components')
     plt.title('Mean Squared Displacement Tensor Components')
-    plt.xscale('log')
-    plt.yscale('log')
+    # plt.xscale('log')
+    # plt.yscale('log')
     plt.legend()
     plt.grid()
-    plt.savefig(f"data/dumbbells_thermal_beta_{beta}_fene_{fene}/msd_tensor_plot.png")
+    plt.savefig(f"data/test_dumbbells_thermal_beta_{beta}_fene_{fene}/msd_tensor_plot.png")
     plt.show()
     return
 

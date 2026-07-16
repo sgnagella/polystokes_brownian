@@ -89,6 +89,7 @@ void PolyStokes::run(){
         }
         RHS();          // rhs <- deterministic forces only (RHS() zeros rhs first)
         mob();          // A  <- mobility at x_n
+        sync_mcc_schur_correction();   // Mcc_block <- eigenvalue-floored M^cc at x_n, before any solve reads it
 
         solve_deterministic_vel(v_det_n);   // v_det_n = M(x_n) F(x_n)
 
@@ -112,6 +113,7 @@ void PolyStokes::run(){
         }
         RHS();
         mob();
+        sync_mcc_schur_correction();   // Mcc_block <- eigenvalue-floored M^cc at x_pred
 
         solve_deterministic_vel(v_det_c);   // v_det_c = M(x_pred) F(x_pred)
 

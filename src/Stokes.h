@@ -106,6 +106,11 @@ private:
     void solve_saddle(Vec X_out, bool warm_start=false);
     void sample_slip_vel();
     void solve_slip_vel();
+    // Refresh Mcc_block = Mcc_base + adaptive eigenvalue-floor correction of the colloid
+    // Schur complement, using the CURRENT (this-stage) Mcm_block. Must be called once per
+    // stage, right after mob() and before any solve reads Mcc_block, so the deterministic
+    // solve and the Brownian noise sample agree on M^cc -- see run.cpp and slip_vel.cpp.
+    void sync_mcc_schur_correction();
     void build_slip_vel_schur();
     void schur_sqrt_lanczos(Mat Bcm, Mat Ccc, double beta, Vec b, Vec out, PetscInt kmax);
     void new_vel();

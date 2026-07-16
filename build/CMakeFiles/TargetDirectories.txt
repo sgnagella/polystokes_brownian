@@ -1,0 +1,7 @@
+/mnt/sda_DATA/Projects/polystokes_brownian/build/CMakeFiles/PolyStokes.dir
+/mnt/sda_DATA/Projects/polystokes_brownian/build/CMakeFiles/edit_cache.dir
+/mnt/sda_DATA/Projects/polystokes_brownian/build/CMakeFiles/rebuild_cache.dir
+/mnt/sda_DATA/Projects/polystokes_brownian/build/CMakeFiles/list_install_components.dir
+/mnt/sda_DATA/Projects/polystokes_brownian/build/CMakeFiles/install.dir
+/mnt/sda_DATA/Projects/polystokes_brownian/build/CMakeFiles/install/local.dir
+/mnt/sda_DATA/Projects/polystokes_brownian/build/CMakeFiles/install/strip.dir

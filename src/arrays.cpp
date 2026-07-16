@@ -32,6 +32,12 @@ namespace arrays{
     std::vector<double> fb;
     std::vector<double> sb;
 
+    // Cached Schur eigendecomposition (dense path only), refreshed once per stage by
+    // sync_mcc_schur_correction() so build_slip_vel_schur() can reuse it without a
+    // second syev call. See arrays.h for layout.
+    std::vector<PetscScalar> schur_Q;
+    std::vector<PetscReal>   schur_lambda_corrected;
+
     std::vector<double> addrn;
     std::vector<double> drift;
 

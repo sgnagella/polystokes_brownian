@@ -41,6 +41,16 @@ namespace arrays{
     extern std::vector<double> fb;
     extern std::vector<double> sb;
 
+    // Cached Schur eigendecomposition of the colloid Schur complement
+    // S = M^cc - beta*M^cm(M^cm)^T (dense path, i.e. nc11 below the Lanczos crossover).
+    // Refreshed once per stage by sync_mcc_schur_correction() -- called right after
+    // mob(), before any solve reads Mcc_block -- so that solve_deterministic_vel() and
+    // the Brownian noise sample in build_slip_vel_schur() agree on M^cc within a stage.
+    // schur_Q is nc11 x nc11, column-major (schur_Q[i + j*nc11] = Q[i,j]);
+    // schur_lambda_corrected[j] = max(lambda_j, eps) is the eigenvalue-floored spectrum.
+    extern std::vector<PetscScalar> schur_Q;
+    extern std::vector<PetscReal>   schur_lambda_corrected;
+
     extern std::vector<double> addrn;
     extern std::vector<double> drift;
 

@@ -1,0 +1,211 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{mathtools}
+\usepackage{mathrsfs}
+\usepackage{booktabs}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\usepackage{enumitem}
+
+\newcommand{\Rh}{\hat{\mathbf{R}}}
+\newcommand{\Rhh}[1]{\hat{R}_{#1}}
+\newcommand{\one}{\mathbf{1}}
+\newcommand{\eps}{\bm{\epsilon}}
+\newcommand{\half}{\tfrac{1}{2}}
+\newcommand{\third}{\tfrac{1}{3}}
+
+\title{\vspace{-2em}Regularized different-sized RPY pair mobilities\\
+in the Kim \& Karrila irreducible basis}
+\author{Translation--translation, translation--rotation, and translation--dipole couplings}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-2.5em}
+
+\section*{Purpose and conventions}
+
+These notes transcribe the different-sized regularized RPY mobility tensors of
+Zuk, Wajnryb, Mizerski \& Szymczak (\emph{J.\ Fluid Mech.}\ \textbf{741}, R5, 2014) into
+the Kim \& Karrila (K\&K) scalar mobility functions, suitable for a Stokesian-dynamics
+code that stores pair mobilities in the irreducible $(x,y)$ form.  For each pair $(i,j)$ we
+write $\mathbf{R}_{ij}=\mathbf{R}_i-\mathbf{R}_j$, $R=|\mathbf{R}_{ij}|$,
+$\Rh=\mathbf{R}_{ij}/R$; $a_i,a_j$ are the two radii and $a_>,a_<$ the larger/smaller of the
+pair.  All expressions are the open-boundary (free-space) propagator forms; $\eta$ is the
+solvent viscosity, and $\Theta$ is the Heaviside step function.
+
+Each coupling has three branches: the non-overlapping far-field form
+($R>a_i+a_j$), the overlapping regularized form ($a_>-a_<<R\le a_i+a_j$), and the
+complete-overlap form ($R\le a_>-a_<$, one sphere inside the other).
+
+\paragraph{Basis tensors.}
+The three couplings are decomposed as
+\begin{align}
+\bm{\mu}^{tt}_{ij} &= x^a_{ij}\,\Rh\Rh + y^a_{ij}\,(\one-\Rh\Rh),\\[2pt]
+\bm{\mu}^{rt}_{ij} &= y^b_{ij}\,\big(\eps\cdot\Rh\big),
+\qquad [\eps\cdot\Rh]_{\alpha\beta}=\epsilon_{\alpha\beta\gamma}\Rhh{\gamma},\\[2pt]
+\mu^{td}_{ij,\alpha\beta\gamma} &=
+x^g_{ij}\Big(\Rhh{\beta}\Rhh{\gamma}-\third\delta_{\beta\gamma}\Big)\Rhh{\alpha}
++ y^g_{ij}\Big(\delta_{\alpha\beta}\Rhh{\gamma}+\delta_{\alpha\gamma}\Rhh{\beta}
+-2\Rhh{\alpha}\Rhh{\beta}\Rhh{\gamma}\Big).
+\label{eq:tdbasis}
+\end{align}
+In \eqref{eq:tdbasis} the first index $\alpha$ is the translational (velocity) index and the
+pair $(\beta,\gamma)$ contracts with the symmetric traceless rate-of-strain $E_{\beta\gamma}$
+(equivalently the stresslet).  Both basis tensors are symmetric and traceless in
+$(\beta,\gamma)$.  This is the standard K\&K \emph{gt}/$\tilde{g}$ decomposition; see the
+remark at the end regarding the normalization of the $y^g$ basis tensor.
+
+\section{Translation--translation coupling \texorpdfstring{$\bm{\mu}^{tt}$}{mu-tt}}
+
+Zuk et al.\ (3.1), in the $\{\one,\Rh\Rh\}$ form:
+\begin{equation}
+\bm{\mu}^{tt}_{ij}=
+\begin{cases}
+\dfrac{1}{8\pi\eta R}\!\left[\left(1+\dfrac{a_i^2+a_j^2}{3R^2}\right)\one
++\left(1-\dfrac{a_i^2+a_j^2}{R^2}\right)\Rh\Rh\right], & a_i+a_j<R,\\[14pt]
+\dfrac{1}{6\pi\eta a_i a_j}\!\left[\begin{aligned}
+&\tfrac{16R^3(a_i+a_j)-\big((a_i-a_j)^2+3R^2\big)^2}{32R^3}\,\one\\[2pt]
+&+\tfrac{3\big((a_i-a_j)^2-R^2\big)^2}{32R^3}\,\Rh\Rh
+\end{aligned}\right], & a_>-a_<<R\le a_i+a_j,\\[20pt]
+\dfrac{1}{6\pi\eta a_>}\,\one, & R\le a_>-a_<.
+\end{cases}
+\end{equation}
+Writing $\bm{\mu}^{tt}=x^a\Rh\Rh+y^a(\one-\Rh\Rh)$ (so $x^a$ is the longitudinal /
+$\Rh\Rh$ eigenvalue and $y^a$ the transverse one), one has $y^a=(\text{coeff of }\one)$ and
+$x^a=(\text{coeff of }\one)+(\text{coeff of }\Rh\Rh)$.  For the non-overlapping branch
+($a_i+a_j<R$):
+\begin{equation}
+\boxed{\;
+x^a_{ij}=\frac{1}{4\pi\eta R}\left(1-\frac{a_i^2+a_j^2}{3R^2}\right),
+\qquad
+y^a_{ij}=\frac{1}{8\pi\eta R}\left(1+\frac{a_i^2+a_j^2}{3R^2}\right).\;}
+\end{equation}
+For the overlapping branch ($a_>-a_<<R\le a_i+a_j$):
+\begin{equation}
+\boxed{\;
+\begin{aligned}
+x^a_{ij}&=\frac{16R^3(a_i+a_j)+2(a_i-a_j)^4-12(a_i-a_j)^2R^2-6R^4}{192\pi\eta\, a_i a_j\,R^3},\\[6pt]
+y^a_{ij}&=\frac{16R^3(a_i+a_j)-\big((a_i-a_j)^2+3R^2\big)^2}{192\pi\eta\, a_i a_j\,R^3}.
+\end{aligned}\;}
+\end{equation}
+For the complete-overlap branch ($R\le a_>-a_<$): $x^a_{ij}=y^a_{ij}=1/(6\pi\eta a_>)$.
+
+\section{Translation--rotation coupling \texorpdfstring{$\bm{\mu}^{rt}$}{mu-rt}}
+
+Zuk et al.\ (3.5) gives $\bm{\mu}^{rt}_{ij}=y^b_{ij}\,(\eps\cdot\Rh)$ with
+\begin{equation}
+\boxed{\;
+y^b_{ij}=
+\begin{cases}
+\dfrac{1}{8\pi\eta R^2}, & a_i+a_j<R,\\[12pt]
+\dfrac{(a_i-a_j+R)^2\big(a_j^2+2a_j(a_i+R)-3(a_i-R)^2\big)}{128\pi\eta\, a_i^3 a_j\,R^2},
+& a_>-a_<<R\le a_i+a_j,\\[12pt]
+\Theta(a_i-a_j)\,\dfrac{R}{8\pi\eta a_i^3}, & R\le a_>-a_<.
+\end{cases}\;}
+\end{equation}
+The complete-overlap branch uses $\zeta^{rr}_i=8\pi\eta a_i^3$.  The
+translation--rotation partner $\bm{\mu}^{tr}_{ij}$ has the identical form with $a_i$ and
+$a_j$ interchanged (Zuk et al.\ note that $\bm{\mu}^{tr}$ is \emph{not} simply the transpose
+of $\bm{\mu}^{rt}$, correcting a misprint in Wajnryb et al.\ 2013).
+
+\section{Translation--dipole coupling \texorpdfstring{$\bm{\mu}^{td}\to(x^g,y^g)$}{mu-td to (xg,yg)}}
+
+\subsection*{The mapping}
+Zuk et al.\ (3.6) write the coupling in the non-irreducible form
+\begin{equation}
+\mu^{td}_{ij,\alpha\beta\gamma}=C_1\,\delta_{\alpha\beta}\Rhh{\gamma}+C_2\,\Rhh{\alpha}\Rhh{\beta}\Rhh{\gamma},
+\label{eq:zukform}
+\end{equation}
+where $[\one\Rh]_{\alpha\beta\gamma}=\delta_{\alpha\beta}\Rhh{\gamma}$ in their notation.
+Because $\mu^{td}$ is contracted with the symmetric traceless $E_{\beta\gamma}$, only the
+part of \eqref{eq:zukform} that is symmetric and traceless in $(\beta,\gamma)$ is physical;
+Zuk et al.\ deliberately record the simplest algebraic representative.  Contracting both
+\eqref{eq:zukform} and the basis form \eqref{eq:tdbasis} with an arbitrary symmetric
+traceless $E$ gives
+\begin{equation}
+[\mu^{td}\!:\!E]_\alpha
+=\underbrace{C_2}_{\text{Zuk}}\,\Rhh{\alpha}(\Rh\Rh\!:\!E)+\underbrace{C_1}_{\text{Zuk}}\,\Rhh{\gamma}E_{\alpha\gamma}
+=\underbrace{(x^g-2y^g)}_{\text{K\&K}}\,\Rhh{\alpha}(\Rh\Rh\!:\!E)+\underbrace{2y^g}_{\text{K\&K}}\,\Rhh{\gamma}E_{\alpha\gamma}.
+\end{equation}
+Matching the two independent structures $\Rhh{\alpha}(\Rh\Rh\!:\!E)$ and $\Rhh{\gamma}E_{\alpha\gamma}$
+yields the linear relation
+\begin{equation}
+\boxed{\,x^g_{ij}=C_1+C_2,\qquad y^g_{ij}=\tfrac12\,C_1\,.}
+\label{eq:mapping}
+\end{equation}
+This was verified numerically to machine precision against the full Cartesian tensor
+\eqref{eq:zukform} in every branch, and its far-field limit reproduces the expected
+$x^g\to-5a_j^3/(2R^2)$, $y^g=O(R^{-4})$.
+
+\subsection*{Branch 1 --- non-overlapping, $R>a_i+a_j$}
+Here $C_1=-\dfrac{a_j^3(5a_i^2+3a_j^2)}{3R^4}$ and
+$C_2=\dfrac{5a_j^3(5a_i^2+3a_j^2-3R^2)}{6R^4}$, so \eqref{eq:mapping} gives
+\begin{equation}
+\boxed{\;
+x^g_{ij}=\frac{a_j^3\big(5a_i^2+3a_j^2-5R^2\big)}{2R^4},
+\qquad
+y^g_{ij}=-\frac{a_j^3\big(5a_i^2+3a_j^2\big)}{6R^4}\;}
+\qquad (R>a_i+a_j).
+\end{equation}
+
+\subsection*{Branch 2 --- overlapping, $a_>-a_<<R\le a_i+a_j$}
+Zuk et al.\ write $\bm{\mu}^{td}_{ij}=\tfrac{5}{6}a_j\big[\mathscr{C}\,\one\Rh+\mathscr{D}\,\Rh\Rh\Rh\big]$,
+i.e.\ $C_1=\tfrac56 a_j\mathscr{C}$, $C_2=\tfrac56 a_j\mathscr{D}$, with
+\begin{align}
+\mathscr{C}&=\frac{10R^6-24a_iR^5-15R^4(a_j^2-a_i^2)+(a_j-a_i)^5(a_i+5a_j)}{40\,a_i a_j R^4},\\[4pt]
+\mathscr{D}&=\frac{\big((a_i-a_j)^2-R^2\big)^2\big((a_i-a_j)(a_i+5a_j)-R^2\big)}{16\,a_i a_j R^4}.
+\end{align}
+Then \eqref{eq:mapping} gives, compactly,
+\begin{equation}
+\boxed{\;
+x^g_{ij}=\frac{5}{6}\,a_j\big(\mathscr{C}+\mathscr{D}\big),
+\qquad
+y^g_{ij}=\frac{5}{12}\,a_j\,\mathscr{C}\;}
+\qquad (a_>-a_<<R\le a_i+a_j).
+\end{equation}
+Explicitly, in terms of $a_i,a_j,R$ (writing $P\equiv 10R^6-24a_iR^5-15R^4(a_j^2-a_i^2)+(a_j-a_i)^5(a_i+5a_j)$
+and $Q\equiv\big((a_i-a_j)^2-R^2\big)^2\big((a_i-a_j)(a_i+5a_j)-R^2\big)$),
+\begin{align}
+y^g_{ij}&=\frac{P}{96\,a_i R^4},\\[4pt]
+x^g_{ij}&=2\,y^g_{ij}+\frac{5a_j}{6}\,\mathscr{D}
+=\frac{P}{48\,a_i R^4}+\frac{5\,Q}{96\,a_i R^4}
+=\frac{2P+5Q}{96\,a_i R^4}.
+\end{align}
+
+\subsection*{Branch 3 --- complete overlap, $R\le a_>-a_<$}
+Zuk et al.\ give $\bm{\mu}^{td}_{ij}=-\Theta(a_j-a_i)\,R\,\one\Rh$, i.e.\ $C_1=-\Theta(a_j-a_i)\,R$,
+$C_2=0$, so
+\begin{equation}
+\boxed{\;
+x^g_{ij}=-\Theta(a_j-a_i)\,R,
+\qquad
+y^g_{ij}=-\tfrac12\,\Theta(a_j-a_i)\,R\;}
+\qquad (R\le a_>-a_<).
+\end{equation}
+This is non-zero only when the dipole-bearing sphere $j$ is the larger one (so that sphere
+$i$ is immersed in it); otherwise the coupling vanishes.  All branches are continuous at
+$R=a_i+a_j$ and $R=a_>-a_<$ (verified numerically).
+
+\section*{Remarks for implementation}
+\begin{itemize}[leftmargin=1.4em]
+\item \textbf{Index/particle roles.} In $\bm{\mu}^{td}_{ij}$, particle $i$ carries the
+translational velocity (Fax\'en response) and particle $j$ carries the dipole/stresslet;
+the asymmetry $a_i\leftrightarrow a_j$ is genuine, so populate the transpose block
+($\bm{\mu}^{dt}$, strain on $i$ from force on $j$) with the roles swapped rather than by
+naive transposition.
+\item \textbf{$y^g$ basis normalization.} The relations \eqref{eq:mapping} assume the
+$y^g$ basis tensor $\big(\delta_{\alpha\beta}\Rhh{\gamma}+\delta_{\alpha\gamma}\Rhh{\beta}
+-2\Rhh{\alpha}\Rhh{\beta}\Rhh{\gamma}\big)$ exactly as in \eqref{eq:tdbasis}.  If your code
+instead defines this basis tensor with a factor $\tfrac12$ (i.e.\
+$\tfrac12(\delta_{\alpha\beta}\Rhh{\gamma}+\delta_{\alpha\gamma}\Rhh{\beta})
+-\Rhh{\alpha}\Rhh{\beta}\Rhh{\gamma}$), multiply the tabulated $y^g$ by $2$.  The $x^g$
+basis tensor $(\Rhh{\beta}\Rhh{\gamma}-\third\delta_{\beta\gamma})\Rhh{\alpha}$ is
+unambiguous.
+\item \textbf{Consistency with the tt substitution rule.} For the non-overlapping
+$\bm{\mu}^{tt}$ only, the different-sized result follows from the equal-sized one via
+$a^2\to(a_i^2+a_j^2)/2$; this shortcut fails for all overlapping branches and for the
+$rt$ and $td$ couplings, which is why the explicit forms above are needed.
+\end{itemize}
+
+\end{document}
