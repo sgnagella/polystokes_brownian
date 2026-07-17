@@ -18,7 +18,7 @@
 		],
 		"files" : 
 		[
-			"/tmp/pip-build-env-hyu_9gom/overlay/lib/python3.11/site-packages/pybind11/share/cmake/pybind11/pybind11Tools.cmake",
+			"/home/takalab/anaconda3/envs/polystokes/lib/python3.11/site-packages/pybind11/share/cmake/pybind11/pybind11Tools.cmake",
 			"CMakeLists.txt"
 		],
 		"nodes" : 
@@ -29,7 +29,7 @@
 			{
 				"command" : 1,
 				"file" : 1,
-				"line" : 89,
+				"line" : 94,
 				"parent" : 0
 			},
 			{
@@ -41,7 +41,7 @@
 			{
 				"command" : 2,
 				"file" : 1,
-				"line" : 112,
+				"line" : 118,
 				"parent" : 0
 			},
 			{
@@ -51,9 +51,15 @@
 				"parent" : 1
 			},
 			{
+				"command" : 3,
+				"file" : 1,
+				"line" : 97,
+				"parent" : 0
+			},
+			{
 				"command" : 4,
 				"file" : 1,
-				"line" : 40,
+				"line" : 45,
 				"parent" : 0
 			},
 			{
@@ -81,6 +87,10 @@
 					"fragment" : "-fno-fat-lto-objects"
 				},
 				{
+					"backtrace" : 5,
+					"fragment" : "-fopenmp"
+				},
+				{
 					"fragment" : "-std=gnu++11"
 				}
 			],
@@ -93,36 +103,36 @@
 			"includes" : 
 			[
 				{
-					"backtrace" : 5,
+					"backtrace" : 6,
 					"path" : "/mnt/sda_DATA/Projects/polystokes_brownian/include"
 				},
 				{
-					"backtrace" : 5,
+					"backtrace" : 6,
 					"isSystem" : true,
 					"path" : "/home/takalab/Software/petsc/arch-linux-c-opt/include"
 				},
 				{
-					"backtrace" : 5,
+					"backtrace" : 6,
 					"isSystem" : true,
 					"path" : "/home/takalab/Software/petsc/include"
 				},
 				{
-					"backtrace" : 5,
+					"backtrace" : 6,
 					"isSystem" : true,
 					"path" : "/home/takalab/Software/slepc/arch-linux-c-opt/include"
 				},
 				{
-					"backtrace" : 5,
+					"backtrace" : 6,
 					"isSystem" : true,
 					"path" : "/home/takalab/Software/slepc/include"
 				},
 				{
-					"backtrace" : 6,
+					"backtrace" : 7,
 					"isSystem" : true,
-					"path" : "/tmp/pip-build-env-hyu_9gom/overlay/lib/python3.11/site-packages/pybind11/include"
+					"path" : "/home/takalab/anaconda3/envs/polystokes/lib/python3.11/site-packages/pybind11/include"
 				},
 				{
-					"backtrace" : 6,
+					"backtrace" : 7,
 					"isSystem" : true,
 					"path" : "/home/takalab/anaconda3/envs/polystokes/include/python3.11"
 				}
@@ -132,9 +142,9 @@
 			{
 				"backtraces" : 
 				[
-					6,
-					6,
-					6
+					7,
+					7,
+					7
 				],
 				"standard" : "11"
 			},
@@ -201,6 +211,14 @@
 			},
 			{
 				"fragment" : "/home/takalab/Software/petsc/arch-linux-c-opt/lib/libpetsc.so",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "/usr/lib/gcc/x86_64-linux-gnu/11/libgomp.so",
+				"role" : "libraries"
+			},
+			{
+				"fragment" : "/usr/lib/x86_64-linux-gnu/libpthread.a",
 				"role" : "libraries"
 			}
 		],

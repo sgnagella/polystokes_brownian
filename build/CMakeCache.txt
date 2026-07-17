@@ -233,6 +233,18 @@ CMAKE_STRIP:FILEPATH=/usr/bin/strip
 // Studio IDE projects all commands are done without /nologo.
 CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
+//CXX compiler flags for OpenMP parallelization
+OpenMP_CXX_FLAGS:STRING=-fopenmp
+
+//CXX compiler libraries for OpenMP parallelization
+OpenMP_CXX_LIB_NAMES:STRING=gomp;pthread
+
+//Path to the gomp library for OpenMP
+OpenMP_gomp_LIBRARY:FILEPATH=/usr/lib/gcc/x86_64-linux-gnu/11/libgomp.so
+
+//Path to the pthread library for OpenMP
+OpenMP_pthread_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libpthread.a
+
 //Arguments to supply to pkg-config
 PKG_CONFIG_ARGN:STRING=
 
@@ -317,8 +329,8 @@ pkgcfg_lib_SLEPc_petsc:FILEPATH=/home/takalab/Software/petsc/arch-linux-c-opt/li
 //Path to a library.
 pkgcfg_lib_SLEPc_slepc:FILEPATH=/home/takalab/Software/slepc/arch-linux-c-opt/lib/libslepc.so
 
-//The directory containing a CMake configuration file for pybind11.
-pybind11_DIR:PATH=/tmp/pip-build-env-hyu_9gom/overlay/lib/python3.11/site-packages/pybind11/share/cmake/pybind11
+//No help, variable specified on the command line.
+pybind11_DIR:UNINITIALIZED=/home/takalab/anaconda3/envs/polystokes/lib/python3.11/site-packages/pybind11/share/cmake/pybind11
 
 
 ########################
@@ -480,6 +492,10 @@ CMAKE_STRIP-ADVANCED:INTERNAL=1
 CMAKE_UNAME:INTERNAL=/usr/bin/uname
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
+//Details about finding OpenMP
+FIND_PACKAGE_MESSAGE_DETAILS_OpenMP:INTERNAL=[TRUE][c ][v4.5()]
+//Details about finding OpenMP_CXX
+FIND_PACKAGE_MESSAGE_DETAILS_OpenMP_CXX:INTERNAL=[-fopenmp][/usr/lib/gcc/x86_64-linux-gnu/11/libgomp.so][/usr/lib/x86_64-linux-gnu/libpthread.a][v4.5()]
 //Details about finding PYTHON
 FIND_PACKAGE_MESSAGE_DETAILS_PYTHON:INTERNAL=/home/takalab/anaconda3/envs/polystokes/bin/python3.113.11.15
 //Details about finding PkgConfig
@@ -488,6 +504,20 @@ FIND_PACKAGE_MESSAGE_DETAILS_PkgConfig:INTERNAL=[/home/takalab/anaconda3/envs/po
 FIND_PACKAGE_MESSAGE_DETAILS_PythonInterp:INTERNAL=[/home/takalab/anaconda3/envs/polystokes/bin/python3.11][v3.11.15(3.8)]
 //Test HAS_FLTO_AUTO
 HAS_FLTO_AUTO:INTERNAL=1
+//Result of TRY_COMPILE
+OpenMP_COMPILE_RESULT_CXX_fopenmp:INTERNAL=TRUE
+//ADVANCED property for variable: OpenMP_CXX_FLAGS
+OpenMP_CXX_FLAGS-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OpenMP_CXX_LIB_NAMES
+OpenMP_CXX_LIB_NAMES-ADVANCED:INTERNAL=1
+//CXX compiler's OpenMP specification date
+OpenMP_CXX_SPEC_DATE:INTERNAL=201511
+//Result of TRY_COMPILE
+OpenMP_SPECTEST_CXX_:INTERNAL=TRUE
+//ADVANCED property for variable: OpenMP_gomp_LIBRARY
+OpenMP_gomp_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: OpenMP_pthread_LIBRARY
+OpenMP_pthread_LIBRARY-ADVANCED:INTERNAL=1
 PETSc_CFLAGS:INTERNAL=-I/home/takalab/Software/petsc/arch-linux-c-opt/include;-I/home/takalab/Software/petsc/include
 PETSc_CFLAGS_I:INTERNAL=
 PETSc_CFLAGS_OTHER:INTERNAL=
@@ -594,5 +624,5 @@ pkgcfg_lib_SLEPc_petsc-ADVANCED:INTERNAL=1
 pkgcfg_lib_SLEPc_slepc-ADVANCED:INTERNAL=1
 prefix_result:INTERNAL=/home/takalab/Software/slepc/arch-linux-c-opt/lib
 //Directories where pybind11 and possibly Python headers are located
-pybind11_INCLUDE_DIRS:INTERNAL=/tmp/pip-build-env-hyu_9gom/overlay/lib/python3.11/site-packages/pybind11/include;/home/takalab/anaconda3/envs/polystokes/include/python3.11
+pybind11_INCLUDE_DIRS:INTERNAL=/home/takalab/anaconda3/envs/polystokes/lib/python3.11/site-packages/pybind11/include;/home/takalab/anaconda3/envs/polystokes/include/python3.11
 
