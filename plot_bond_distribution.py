@@ -14,8 +14,9 @@ import matplotlib.pyplot as plt
 from test_sim_dumbbells_thermal import read_trajectory, equilibrium_length_stats, minimum_image
 
 # --- locate the run and load the parameters it saved (test_sim_dumbbells_thermal.main) ---
-beta = 0.1                         # selects the run directory
-data_save_dir = f"data/dumbbells_thermal_beta_{beta}"
+fene = False
+beta = 0.01                         # selects the run directory
+data_save_dir = f"data/test_dumbbells_thermal_beta_{beta}_fene_{fene}"
 config_dir = f"{data_save_dir}/config"
 
 trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))  # NumPy 2.0 renamed trapz
@@ -96,6 +97,6 @@ def main(data_save_dir):
 if __name__ == "__main__":
     import os
     os.makedirs("figures", exist_ok=True)
-    beta = 0.1
-    data_save_dir = f"data/dumbbells_thermal_beta_{beta}"
+    # beta = 0.1
+    # data_save_dir = f"data/test_dumbbells_thermal_beta_{beta}"
     main(data_save_dir=data_save_dir)

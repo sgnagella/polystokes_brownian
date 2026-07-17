@@ -470,7 +470,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
     conf = sample_initial_config(N_dumbbell, r0, kbond, kT, box=box, min_sep=mono_cut)
     bond_ids = build_bond_ids(N_dumbbell)
 
-    data_save_dir = f'data/test_dumbbells_thermal_beta_{beta}_fene_{fene}'
+    data_save_dir = f'data/test_dumbbells_N_{N_dumbbell}_thermal_beta_{beta}_fene_{fene}'
     data_config_dir = os.path.join(data_save_dir, 'config')
     if run:
         if os.path.exists(data_config_dir):
@@ -519,12 +519,12 @@ if __name__ == "__main__":
     samplerate = 100    # sample every 0.1 time units (fine enough to resolve the
                          # trap's ~2-time-unit relaxation time for the autocorrelation
                          # correction in trap_statistics)
-    beta = 0.01
+    beta = 0.001
     # 1 dumbbell + 1 trapped colloid, run long enough (tmax=500, i.e. ~250 trap
     # relaxation times at ktrap=1) to get solid trap statistics: ~100+ effective
     # independent samples per axis after the autocorrelation correction, rather
     # than the ~10-50 you get from a much shorter run. kbond=1 (soft bond) keeps
     # dt=0.001 stable without needing the stiff-bond dt=1e-5 regime.
     main(beta=beta, dt=dt, samplerate=samplerate, tmax=5.0, box=[10,10,10],
-         N_dumbbell=5000, kbond=1.0)
+         N_dumbbell=50000, kbond=1.0)
 

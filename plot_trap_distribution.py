@@ -21,10 +21,11 @@ from test_sim_dumbbells_thermal import (
 )
 
 # --- locate the run and load the parameters it saved (test_sim_dumbbells_thermal.main) ---
-beta = 0.1                         # selects the run directory
-data_save_dir = f"data/dumbbells_thermal_beta_{beta}"
+fene = False
+beta = 0.01                         # selects the run directory
+data_save_dir = f"data/test_dumbbells_thermal_beta_{beta}_fene_{fene}"
 config_dir = f"{data_save_dir}/config"
-drop_transient = 0.2               # discard this leading fraction (relax from r=0 start)
+drop_transient = 0.0               # discard this leading fraction (relax from r=0 start)
 
 trapz = getattr(np, "trapezoid", getattr(np, "trapz", None))  # NumPy 2.0 renamed trapz
 
