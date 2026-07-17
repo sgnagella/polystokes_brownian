@@ -10,7 +10,7 @@ done on this machine; adjust paths and versions to match your system.
 |-------------|----------------------------------------------------|
 | OS          | Ubuntu 24.04 on WSL2 (Linux 6.18 kernel)           |
 | Compiler    | gcc / g++ 12.4.0 (system, `/usr/bin`)              |
-| Fortran     | **none** — `gfortran` not installed                |
+| Fortran     | none on the original machine — but install `gfortran` for the recommended OpenBLAS build (§1.1) |
 | CMake       | 4.1.4                                              |
 | pkg-config  | 0.29.2 (installed via conda-forge)                 |
 | Boost       | 1.83 headers (system, `/usr/include/boost`)        |
@@ -27,10 +27,36 @@ version 3.25.2).
 
 ### 1.1 Configure
 
-There is **no Fortran compiler** on this machine, so PETSc is configured with
-Fortran disabled. Because the reference Netlib BLAS/LAPACK requires Fortran,
-PETSc downloads the C-translated `f2cblaslapack` instead. No system MPI was
-present, so MPICH is downloaded and built by PETSc.
+> **Recommended for serial performance — use OpenBLAS, not `f2cblaslapack`.**
+> The dominant per-step cost is the linear solve, whose main kernel is a dense
+> BLAS-2 `dgemv` (the arrowhead `MatMult`). Building PETSc against **threaded
+> OpenBLAS** instead of the C-translated reference `f2cblaslapack` makes a serial
+> run **~34% faster** at identical accuracy (measured; see
+> [`docs/profiling_baseline_serial.md`](docs/profiling_baseline_serial.md)).
+> OpenBLAS ships its own optimized BLAS but relies on **Fortran** for its LAPACK
+> routines, so this path needs a Fortran compiler (`sudo apt install gfortran`).
+> Use `--download-f2cblaslapack --with-fc=0` **only** as a fallback when no Fortran
+> compiler is available.
+
+**Recommended (OpenBLAS, needs `gfortran`):**
+
+```bash
+cd /home/snagella/Software/petsc
+./configure PETSC_ARCH=arch-linux-openblas \
+  --with-cc=gcc \
+  --with-cxx=g++ \
+  --with-fc=gfortran \
+  --download-openblas \
+  --download-mpich \
+  --with-debugging=0 \
+  COPTFLAGS="-O3 -march=native" \
+  CXXOPTFLAGS="-O3 -march=native" \
+  FOPTFLAGS="-O3 -march=native"
+```
+
+**Fallback (no Fortran compiler available):** the machine this doc was first
+recorded on had **no `gfortran`**, so it used the C-translated `f2cblaslapack`
+with Fortran disabled. This still works — it is just the slower reference BLAS:
 
 ```bash
 cd /home/snagella/Software/petsc
@@ -46,10 +72,16 @@ Configuration option rationale:
 
 | Option                      | Why                                                              |
 |-----------------------------|------------------------------------------------------------------|
-| `--with-fc=0`               | No Fortran compiler; build without Fortran support.              |
-| `--download-f2cblaslapack`  | No system BLAS/LAPACK; reference Netlib build needs Fortran, so use the C-translated version. |
-| `--download-mpich`          | No system MPI found; build MPICH (v5.0.0) for parallel support.  |
-| `PETSC_ARCH=arch-linux-c-debug` | Debug build (`-O0 -g3`). See the note at the end about an optimized arch. |
+| `--download-openblas`       | Optimized threaded BLAS/LAPACK; ~34% faster serial than `f2cblaslapack`. Needs a Fortran compiler. **Recommended.** |
+| `--with-fc=gfortran`        | OpenBLAS's LAPACK routines are Fortran; a Fortran compiler is required to build them. |
+| `--with-debugging=0` + `-O3 -march=native` | Optimized build. Do NOT profile/benchmark a debug (`-O0`) build — the `long double` mobility math alone runs ~50× slower unoptimized. |
+| `--download-mpich`          | No system MPI found; build MPICH for MPI support (also the base for future distributed runs). |
+| *fallback:* `--with-fc=0` / `--download-f2cblaslapack` | Use only with no Fortran compiler; reference Netlib BLAS needs Fortran, so the C-translated build is substituted. |
+
+> The rest of this document uses `PETSC_ARCH=arch-linux-c-debug` for continuity
+> with the original recording. For the recommended OpenBLAS build, substitute your
+> chosen arch name (e.g. `arch-linux-openblas`) wherever `PETSC_ARCH` appears
+> below — the `lib` and `pkgconfig` paths all derive from it.
 
 > Note: `--download-f2cblaslapack` is fetched from a remote server and can hit a
 > transient network timeout. If the download fails, simply re-run the identical
@@ -236,6 +268,30 @@ python test_sim.py     # run — shared libs found via LD_LIBRARY_PATH
 > (see the note at the end), update `PETSC_ARCH` in the hook — both the `lib` and
 > `pkgconfig` paths derive from it, so that one line is the only change.
 
+### 4.1 Run single-threaded (serial performance)
+
+Run PolyStokes with BLAS and OpenMP threading **disabled**:
+
+```bash
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+```
+
+This regime (`mm_HI=False`, one colloid) is an O(Nm) *arrowhead* problem: the
+dense `MatMult` is a **skinny** `11 × 3·Nm` `dgemv`, and the O(Nm) assembly loops
+are cheap. Threading either is a **net loss** — the per-call/threading overhead
+exceeds the work (an OpenBLAS thread sweep gained nothing at 2–4 threads and blew
+up at 8; a threaded assembly loop ran ~4× slower). So the fast configuration is
+**single-threaded OpenBLAS**. Shared-memory threading was evaluated and does not
+help here; scaling past one core is a distributed-memory (MPI) effort, not an
+OpenMP one. See [`docs/profiling_baseline_serial.md`](docs/profiling_baseline_serial.md).
+
+> Multi-arch caveat: if you keep several PETSc arches, do **not** leave a
+> different arch's `lib` on `LD_LIBRARY_PATH` — it shadows the intended one
+> (`LD_LIBRARY_PATH` overrides the binary's `RUNPATH`) and you may silently run
+> the wrong (e.g. slower `f2cblaslapack`) build. Point `LD_LIBRARY_PATH` at only
+> the arch you built PolyStokes against.
+
 ---
 
 ## 5. Verify with the test simulation
@@ -263,22 +319,33 @@ Expected: the solver initializes, integrates from `Time 0.001` to `Time 0.191`
 
 ## Notes and caveats
 
-- **Debug vs optimized PETSc.** This build uses `arch-linux-c-debug`
-  (`-O0 -g3`), good for development but slow. The project README assumes
-  `arch-linux-c-opt`. For production runs, configure a second optimized arch
-  and rebuild PolyStokes against it:
+- **Debug vs optimized PETSc.** A debug arch (`-O0 -g3`) is good for development
+  but far too slow to benchmark (the `long double` mobility math alone runs ~50×
+  slower unoptimized). For production, build an **optimized OpenBLAS** arch
+  (section 1.1) and rebuild PolyStokes against it:
   ```bash
   cd /home/snagella/Software/petsc
-  ./configure PETSC_ARCH=arch-linux-c-opt --with-cc=gcc --with-cxx=g++ \
-    --with-fc=0 --download-f2cblaslapack --download-mpich --with-debugging=0
-  make PETSC_ARCH=arch-linux-c-opt all
+  ./configure PETSC_ARCH=arch-linux-openblas --with-cc=gcc --with-cxx=g++ \
+    --with-fc=gfortran --download-openblas --download-mpich --with-debugging=0 \
+    COPTFLAGS="-O3 -march=native" CXXOPTFLAGS="-O3 -march=native" \
+    FOPTFLAGS="-O3 -march=native"
+  make PETSC_ARCH=arch-linux-openblas all
   # rebuild SLEPc against the optimized arch as well
   cd /home/snagella/Software/slepc
-  PETSC_ARCH=arch-linux-c-opt ./configure
-  make PETSC_ARCH=arch-linux-c-opt
-  # then re-export PETSC_ARCH/PKG_CONFIG_PATH/LD_LIBRARY_PATH for arch-linux-c-opt
+  PETSC_ARCH=arch-linux-openblas ./configure
+  make PETSC_ARCH=arch-linux-openblas
+  # then re-export PETSC_ARCH/PKG_CONFIG_PATH/LD_LIBRARY_PATH for arch-linux-openblas
   # (covering both PETSc and SLEPc) and re-run `pip install .`
   ```
+  (No Fortran compiler? Substitute `--with-fc=0 --download-f2cblaslapack` — the
+  slower reference-BLAS fallback.)
+
+- **Solver (no install action).** PolyStokes uses **MINRES** for the symmetric
+  saddle system (set in `src/init.cpp`); it is ~29% faster than the previous GMRES
+  at identical accuracy. This is a source-level default and needs nothing at
+  install time. Combined with the OpenBLAS build above, a serial run is ~56%
+  faster than the original GMRES + `f2cblaslapack` stack. Details and validation:
+  [`docs/profiling_baseline_serial.md`](docs/profiling_baseline_serial.md).
 
 - **Portability note (Boost).** Boost is not declared in `CMakeLists.txt`; the
   build succeeds only because Boost headers are on the default system include
