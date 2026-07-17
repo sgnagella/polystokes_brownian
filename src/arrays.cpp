@@ -69,10 +69,12 @@ namespace arrays{
     // rank2_array rfu12;
     // rank2_array rfu21;
 
-    // Mat ZMUF; 
+    // Mat ZMUF;
     // Mat ZMUS;
     // Mat ZMES;
-    // Mat Pinv;
+    Mat Pinv;   // defined (not commented) so arrays.h's `extern Mat Pinv` and the
+                // (currently unused) initialize_Pinv() below resolve on a CLEAN build --
+                // the old build/ only linked because of a stale pre-comment object file.
     Mat M;
     Mat Mcm_block;
     Mat Mcc_block;

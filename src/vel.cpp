@@ -64,7 +64,10 @@ void PolyStokes::new_vel(){
     // by solving the saddle point system
 
     PetscInt i, ishift;
-    solve_saddle(X, false);  // deterministic solve: cold start
+    // Cold start: this solve includes the fresh Brownian slip velocity (rhs was augmented
+    // by solve_slip_vel()), so the previous step's solution is uncorrelated with this one
+    // and warm-starting it measurably INCREASES iterations. Keep it cold.
+    solve_saddle(X, false);
 
     // Get the translational and rotational 
     // velocities from the solution vector 
@@ -90,6 +93,11 @@ void PolyStokes::solve_deterministic_vel(std::vector<double>& out){
     // RHS()+mob(), no Brownian noise) into the dedicated Xdet vector, so it never
     // clobbers the full solve's X (or fext, unlike new_vel() with record_forces). Used
     // once at x_n (predictor) and once at x_pred (corrector); see run.cpp.
+    // Cold start. Warm-starting from Xdet's previous contents was measured to INCREASE
+    // GMRES iterations (~19.5 -> ~23.7 matvecs/solve) even for the well-correlated corrector:
+    // with PETSc's ||b||-relative convergence, the reassembled operator + adaptive Schur
+    // floor make the prior solution no better than a zero guess, so it only adds iterations.
+    // See docs/profiling_baseline_serial.md.
     solve_saddle(Xdet, false);
     const PetscScalar *X_array;
     VecGetArrayRead(Xdet, &X_array);

@@ -156,6 +156,7 @@ void bond_forces(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, bool f
 }
 
 void PolyStokes::RHS(bool drift){
+    PetscEventScope _prof(ev_rhs);
     // This routine constructs the right-hand side of the saddle point matrix
     
     // Zero out rhs

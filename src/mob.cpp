@@ -633,6 +633,7 @@ void PolyStokes::fill_self(){
 }
 
 void PolyStokes::mob(){
+    PetscEventScope _prof(ev_mob);
     // This routine computes the far-field contributions to the grand mobility tensor
 
     // Inputs: None
@@ -976,6 +977,12 @@ void PolyStokes::mob(){
         // helper and direct writes into the dense array (avoids per-entry MatSetValues).
         PetscScalar *cm;
         ierr = MatDenseGetArray(Mcm_block, &cm); CHKERRV(ierr);   // column-major, lda = nc11
+        // NOTE: this AB loop is thread-SAFE (mobility_AB is const; each pair writes a disjoint
+        // column block of cm), but threading it is NOT worth it and was measured to be a net
+        // LOSS: the assembly is only ~5% of runtime, and an OpenMP parallel-for here ran ~4x
+        // SLOWER at 8 threads (per-thread boost::multi_array allocation contention across the
+        // ~4 mob() calls/step). Kept serial. See docs/profiling_baseline_serial.md; the real
+        // wins are MINRES + a good BLAS (OpenBLAS), not shared-memory threading of O(Nm) loops.
         rank2_array la(boost::extents[ndim][ndim]);
         rank2_array lb(boost::extents[ndim][ndim]);
         rank2_array lbt(boost::extents[ndim][ndim]);

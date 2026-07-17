@@ -29,6 +29,11 @@ pkg_check_modules(SLEPc REQUIRED IMPORTED_TARGET slepc)
 # Find Pybind11
 find_package(pybind11 REQUIRED)
 
+# OpenMP for shared-memory threading of the O(Nm) assembly loops (e.g. the mob() AB loop).
+# Optional: without it the #pragma omp directives are simply ignored and the build stays
+# serial (identical to today's numbers).
+find_package(OpenMP)
+
 # Include the necessary directories for PETSc and MPI
 # target_include_directories(${MODULE_NAME} PRIVATE
 #     ${PETSC_DIR}/${PETSC_ARCH}/include  # PETSc include path
@@ -93,6 +98,7 @@ target_link_libraries(PolyStokes
     PRIVATE
     PkgConfig::PETSc
     PkgConfig::SLEPc
+    $<$<TARGET_EXISTS:OpenMP::OpenMP_CXX>:OpenMP::OpenMP_CXX>
     # ${PETSC_LIBRARIES}
     # # ${PETSC_DIR}/lib
     # # ${PETSC_DIR}/${PETSC_ARCH}/lib

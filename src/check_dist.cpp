@@ -9,6 +9,7 @@
 using namespace arrays;
 
 void PolyStokes::check_dist(){
+    PetscEventScope _prof(ev_check);
     // Declare variables
     int ii , jj , kk, k3, j3, type_id;
     double dx, dy, dz, dr, dr_inv, dst, dst_inv, rverl;

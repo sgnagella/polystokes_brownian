@@ -31,6 +31,7 @@
 #include <signal.h>
 #include <atomic>
 #include <algorithm>
+#include <cstdlib>
 #include <petscsys.h>
 
 // Needed for the predictor-corrector workspace (x, x_n, up, udiff, v_det_n/c, v_brown).
@@ -145,7 +146,8 @@ void PolyStokes::run(){
     }
 
     // [profiling] dump the PETSc/SLEPc -log_view summary without finalizing
-    // PetscLogView(PETSC_VIEWER_STDOUT_WORLD);
+    // (opt-in via POLYSTOKES_LOGVIEW=1; the default log handler is started in init()).
+    if (std::getenv("POLYSTOKES_LOGVIEW")) { PetscLogView(PETSC_VIEWER_STDOUT_WORLD); }
 
     sim_ptr = nullptr;
 

@@ -15,6 +15,7 @@ void PolyStokes::sample_drift_displacement(){
 }
 
 void PolyStokes::drift(){
+    PetscEventScope _prof(ev_drift);   // inclusive: also counts the mob/check_dist/RHS/solve it calls
     int& nm3nc6 = consts.nm3nc6;
     double& eps = consts.rfd_eps;   // RFD probe half-step; central-difference separation is 2*eps
     // This routine estimates the thermal drift kT*div(M) via a Random Finite

@@ -11,6 +11,17 @@
 #include "box.h"
 #include "multi_arrays.h"
 
+// Lightweight RAII wrapper around a PETSc log event: begins the event on
+// construction and ends it when the scope exits (any return path). Used to time
+// the plain-C++ assembly routines (mob/check_dist/RHS/drift) -- which are otherwise
+// invisible to -log_view -- so the Stage-0 profiling baseline and the later threaded
+// comparison get a per-function wall-time split. A no-op cost when logging is off.
+struct PetscEventScope {
+    PetscLogEvent ev;
+    explicit PetscEventScope(PetscLogEvent e) : ev(e) { PetscLogEventBegin(ev, 0, 0, 0, 0); }
+    ~PetscEventScope() { PetscLogEventEnd(ev, 0, 0, 0, 0); }
+};
+
 class PolyStokes {
 public:
     PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI=true, bool chain_HI=false, bool fene=true, bool record_forces=false, bool tether=false, bool mono_ev=false, const std::vector<double>& box=std::vector<double>(), double t=0.0);
@@ -53,6 +64,12 @@ private:
     Mat Smat = nullptr;
 
     bool petsc_finalized = false;
+
+    // PETSc log-event handles for the O(Nm) assembly routines (registered in init()).
+    // Let -log_view report mob/check_dist/RHS/drift as named events; KSPSolve and the
+    // arrowhead MatMult are already logged automatically by PETSc.
+    PetscLogEvent ev_mob = 0, ev_check = 0, ev_rhs = 0, ev_drift = 0;
+
     std::mt19937_64 rng;
     std::normal_distribution<double> normal_dist;
 
