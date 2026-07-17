@@ -92,6 +92,15 @@ void PolyStokes::run(){
         mob();          // A  <- mobility at x_n
         sync_mcc_schur_correction();   // Mcc_block <- eigenvalue-floored M^cc at x_n, before any solve reads it
 
+        // Stage-2b milestone-1 check: with Mcm/Mcc populated, verify the distributed arrowhead
+        // matvec against the serial one, then stop. Opt-in via POLYSTOKES_MPI_SELFTEST=1.
+        if (i == 0 && std::getenv("POLYSTOKES_MPI_SELFTEST")) {
+            bool ok = verify_distributed_matvec();
+            if (mpi_rank == 0) std::cout << "[mpi-selftest] " << (ok ? "PASS" : "FAIL") << std::endl;
+            sim_ptr = nullptr;
+            return;
+        }
+
         solve_deterministic_vel(v_det_n);   // v_det_n = M(x_n) F(x_n)
 
         if (pinfo.kT > 0){

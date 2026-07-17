@@ -121,6 +121,10 @@ private:
                      rank2_array& mob_a, rank2_array& mob_b,
                      rank2_array& mob_bt, rank2_array& mob_gt) const;
     void fill_self();
+    // Stage-2b verification: apply the arrowhead operator to a deterministic vector both
+    // serially (replicated) and via the distributed monomer-partition + colloid MPI_Allreduce,
+    // and report the max discrepancy. Env-triggered (POLYSTOKES_MPI_SELFTEST) from run().
+    bool verify_distributed_matvec();
     void mob();
     void drift();
     void sample_drift_displacement();
