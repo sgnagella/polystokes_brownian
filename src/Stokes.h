@@ -65,6 +65,10 @@ private:
 
     bool petsc_finalized = false;
 
+    // MPI rank/size on PETSC_COMM_WORLD (set in init()). Default 0/1 so the serial path is
+    // unchanged. Stage-2 uses these to guard I/O to rank 0 and (later) to partition monomers.
+    PetscMPIInt mpi_rank = 0, mpi_size = 1;
+
     // PETSc log-event handles for the O(Nm) assembly routines (registered in init()).
     // Let -log_view report mob/check_dist/RHS/drift as named events; KSPSolve and the
     // arrowhead MatMult are already logged automatically by PETSc.

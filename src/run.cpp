@@ -129,18 +129,22 @@ void PolyStokes::run(){
         //     break;
         // }
 
-        // Write the simulation ouptuts
-        // write_outputs();
+        // Write the simulation ouptuts. Guard to rank 0: under MPI every rank currently holds
+        // the full (replicated) state, so a single writer avoids all ranks clobbering the same
+        // output files. Once state is distributed (Stage 2b/2c), the writers must first gather
+        // the owned slices to rank 0.
         if (i == 0 or i % timeinfo.samplerate == 0){
-            std::cout << "Time " << timeinfo.t << std::endl;
-            write_configuration();
-            write_quaternions();
+            if (mpi_rank == 0){
+                std::cout << "Time " << timeinfo.t << std::endl;
+                write_configuration();
+                write_quaternions();
 
-            if(record_forces){
-                write_forces();
+                if(record_forces){
+                    write_forces();
+                }
+
+                write_stresslets();
             }
-            
-            write_stresslets();
         }
         // std::cout << "\n" << std::endl;
     }

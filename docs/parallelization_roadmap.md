@@ -2,6 +2,14 @@
 
 *Goal: speed up a single large simulation. Target: multi-node cluster.*
 
+> **Status (updated after `feature/openmp`).** Stage 0 (profiling) and Stage 1 are **done**;
+> see [`profiling_baseline_serial.md`](profiling_baseline_serial.md). Key finding: the linear
+> **solve is ~91%** of runtime, not the O(Nm) assembly (~6.5%), so shared-memory OpenMP is a
+> **dead end** here (assembly threading measured a *net loss*). The realized serial wins were
+> **algorithmic + library: GMRES→MINRES (~29%) and f2cblas→OpenBLAS (~34%), ~56% combined.**
+> With single-node exhausted, **Stage 2 (MPI) is the active work** for scaling to ~100K
+> dumbbells. The solver is now **MINRES** (symmetric-indefinite saddle), not GMRES.
+
 ## Context
 
 The production workload (`test_sim_dumbbells_thermal.py`) is: `mm_HI=False`, a **single
@@ -29,20 +37,35 @@ evaluated **~4× per step**. Dominant O(Nm) costs:
   disjoint dense columns. Nearly OpenMP-ready.
 - **`check_dist()`** pairwise separations; **`RHS()`** bond/trap/WCA forces (WCA via the
   per-object monomer cell list, `src/cell_list.cpp`).
-- **GMRES+Jacobi solve**: matvec is `ArrowheadMult` (`src/matfree_A.cpp:38-80`), two dense
-  `Mcm_block` matvecs O(Nc·Nm) — threaded/distributable BLAS.
+- **MINRES+Jacobi solve** (`src/init.cpp:51,58`): matvec is `ArrowheadMult`
+  (`src/matfree_A.cpp:38-80`), two dense `Mcm_block` matvecs O(Nc·Nm). **Stage-0 profiling put
+  this at ~91% of wall time** — its Krylov `Vec` reductions and dense `MatMult` are what MPI
+  distributes (they do not thread within a node); the assembly below is only ~6.5%.
 - The Brownian slip-velocity and colloid Schur eigendecomposition are **negligible** here
   (nc11 = 11; dense syev on an 11×11, `src/slip_vel.cpp:81-306`).
 
 ## Recommended approach — staged, lowest-risk-first
 
-### Stage 0 — Profiling baseline *(prerequisite, ~0.5 day)*
-Turn on `PetscLogView` (already stubbed at `src/run.cpp:148`) and run at production Nm for
-a few hundred steps. Record the wall-time split across `mob()`, `KSPSolve`, `drift()`,
-`check_dist`/`RHS`. This ranks the OpenMP/MPI targets by real cost and sets the speedup
-yardstick. **Deliverable:** a `-log_view` table committed to `docs/`.
+### Stage 0 — Profiling baseline *(prerequisite, ~0.5 day)* — ✅ **DONE**
+`PetscLogView` is gated behind `POLYSTOKES_LOGVIEW=1` (`src/run.cpp`) with per-function log
+events (`mob`/`check_dist`/`RHS`/`drift`). Result committed to
+[`docs/profiling_baseline_serial.md`](profiling_baseline_serial.md): **KSPSolve ~91%**, `mob`
+~5%, `check_dist` ~1%, `RHS` ~0.3% — which redirected the whole effort to the solve.
 
-### Stage 1 — OpenMP within a node *(fast win, ~1 week)*
+### Stage 1 — OpenMP within a node — ✅ **DONE, but a net loss → not adopted**
+Evaluated and **reverted**. Profiling (Stage 0) showed the O(Nm) assembly is only ~6.5% of
+runtime, so Amdahl caps OpenMP at ~1.07×; worse, threading the `mob()` AB loop measured **~4×
+slower at 8 threads** (per-thread `boost::multi_array` allocation contention), and the skinny
+`Mcm_block` gemv does not benefit from BLAS threads either. **The realized single-node wins
+were instead algorithmic + library:** GMRES→**MINRES** (~29%, `src/init.cpp`; the saddle
+operator is symmetric-indefinite so the short 3-term recurrence removes GMRES's ~47%
+orthogonalization) and f2cblas→**OpenBLAS** (~34% serial). Run single-threaded
+(`OMP_NUM_THREADS=1`, `OPENBLAS_NUM_THREADS=1`). Details in
+[`profiling_baseline_serial.md`](profiling_baseline_serial.md). The original OpenMP sketch is
+retained below for reference / the `find_package(OpenMP)` hook remains for future large-Nm work.
+
+<details><summary>Original Stage-1 OpenMP sketch (not adopted)</summary>
+
 Shared-memory threading of the O(Nm) loops. No change to the global `arrays::` namespace
 (single process, shared memory); correctness hinges on partitioning *writes*.
 
@@ -66,32 +89,74 @@ Shared-memory threading of the O(Nm) loops. No change to the global `arrays::` n
 **Value:** near-core-count speedup on one node, de-risks Stage 2, and Stage-0 numbers say
 whether going multi-node is even worth it.
 
-### Stage 2 — MPI particle decomposition via PETSc *(multi-node scaling, ~3–5 weeks)*
-This is what "one big run on a cluster" ultimately requires. The arrowhead structure makes
-it clean because the monomer block is diagonal and the colloid block is tiny.
+</details>
 
-- **Distribute monomer DOFs across ranks.** Convert the arrowhead work vectors and saddle
-  Vecs from `VecCreateSeq(PETSC_COMM_SELF, …)` to parallel `VecCreate(PETSC_COMM_WORLD)`
-  with monomer rows partitioned (`src/matfree_A.cpp:133-140`, `src/arrays.cpp` Vec
-  creations). Keep the 11 colloid DOFs replicated/owned by one rank.
-- **`Mcm_block` → distributed** `MPIDENSE`/`MPIAIJ` with monomer *columns* local to each
-  rank. The arrowhead matvec (`ArrowheadMult`) becomes: each rank applies its local monomer
-  coupling; the colloid↔monomer contraction is a small `MPI_Allreduce` over nc11 = 11
-  scalars. `M^mm = beta_inv·I` is embarrassingly parallel. GMRES + Jacobi PC over
-  `PETSC_COMM_WORLD` then work directly on distributed operands.
-- **Distribute force/neighbor work.** Partition monomers spatially; the WCA cell list
-  (`src/cell_list.cpp`) needs ghost/halo monomers from neighbor ranks (one halo exchange
-  per step), or reuse a PETSc `DMSwarm`/star-forest for the monomer–colloid pairs. Since HI
-  is a single central colloid, every rank needs only that colloid's state (broadcast,
-  trivial); the expensive monomer–monomer overlap is short-range and local.
-- **`set_vars()` pair enumeration** (`src/init.cpp:165-347`) must build only the local
-  monomer partition's lists instead of the full replicated lists.
-- **RNG**: independent parallel streams per rank (rank-offset seed, or PETSc `PetscRandom`).
-- **Colloid Schur / slip-vel** stays serial on the colloid-owning rank (nc11 = 11, cheap);
-  broadcast the resulting colloid slip velocity.
-- **Global `arrays::` namespace is fine for MPI** (each rank is its own process) — but its
-  contents must become *distributed* storage, not the current replicated `SELF` storage, or
-  ranks just duplicate work. This is the bulk of the effort.
+### Stage 2 — MPI particle decomposition via PETSc *(multi-node scaling, ~3–5 weeks)* — **the current target**
+With single-node exhausted (Stage 1 above), reaching ~100K dumbbells (Nm ≈ 2·10⁵) requires
+**distributed memory**. Today the code runs single-rank: all data `Mat`/`Vec` are
+`PETSC_COMM_SELF`/`VecCreateSeq`, so `mpiexec -n N` just replicates work. The arrowhead
+structure makes distribution clean — the monomer self-block is diagonal and the colloid
+block is tiny.
+
+**Scope: production regime first.** `mm_HI=False`, `mono_ev=False`, `tether=False`, single
+colloid — the stated 100K-dumbbell workload. **Partition monomers by dumbbell** (contiguous
+index blocks, both beads of a dumbbell on the same rank). Then: intra-dumbbell **bonds stay
+on-rank**, there is **no monomer–monomer WCA**, and the *only* cross-rank coupling is the
+single central colloid → a **halo-free** decomposition (broadcast the colloid + one small
+`MPI_Allreduce`). The general case (`mono_ev=True` WCA, tethers, multi-colloid) needs a
+spatial decomposition with a ghost halo and is deferred to sub-stage **2d**.
+
+**DOF layout: keep the three saddle blocks separate (MatNest/VecNest)** — no global reindex.
+The saddle vector is `x = [u_m (nm3) | u_c (nc11=11) | l (nm3nc6)]` (`src/matfree_A.cpp:38-102`);
+only `nm3`, `nm3nc6`, `nm3nc11`, `nm6nc17` scale with Nm (`src/Stokes.cpp:74-83`). Each block
+keeps monomer-natural indexing; `u_m` and `l` distribute over the monomer partition, `u_c`
+replicates on every rank.
+
+Sub-stages, **each preserving `1-rank == today's serial run bitwise`**:
+
+**2a — MPI bring-up (plumbing only).** ✅ *implemented.* Query `mpi_rank`/`mpi_size` from
+`PETSC_COMM_WORLD` (`src/init.cpp`; use **PETSc's own MPI** via `petscsys.h` — do **not**
+`find_package(MPI)`, which could pull the system OpenMPI on `LD_LIBRARY_PATH` and clash with
+PETSc's `--download-mpich`), guard output to rank 0 (`src/run.cpp`), keep the **same** RNG seed
+on all ranks for now (per-rank streams move to 2c, once noise draws are local — otherwise
+replicated ranks diverge). **Guarantee: 1-rank == serial bitwise** (verified via
+`scratch_mpi_check.py`). *Note:* there is **no "replicated N-rank" middle ground** — PETSc's
+`global = Σ local` model means the existing `PETSC_DECIDE` world vectors (`rhs,X,…`) split
+across ranks while the replicated `SELF` operator does not, so `mpiexec -n >1` aborts
+(`PCApply: local rows ≠ vector size`) until 2b actually distributes the operator. N-rank
+correctness therefore lands with 2b, not here.
+
+**2b — Distribute the operator + solve (the core).** Represent the state as a **VecNest** of
+`u_m` (nm3, MPI, monomer partition), `u_c` (nc11, replicated), `l` (nm3nc6, MPI). Rework
+`ArrowheadMult`/`ArrowheadGetDiagonal` (`src/matfree_A.cpp:38-102`) to act on the sub-vecs
+instead of manual index slices:
+  - `M^mm = beta_inv·I` on `u_m` — embarrassingly parallel, local.
+  - `M^cm·u_m` → colloid result via each rank's local `Mcm_block` columns + an **`MPI_Allreduce`**
+    over nc11 scalars; `M^mc·u_c`, `M^cc·u_c` computed locally (`u_c` replicated, cheap).
+  - `B·l`, `B^T·u` with `B` as **MPIAIJ**, rows partitioned to match the monomer blocks
+    (`src/arrays.cpp:350-370`).
+  - `Mcm_block` → **MPIDENSE** with monomer *columns* local (`src/arrays.cpp:329`);
+    `Mcc_block`/`Smat` stay replicated SELF. Switch the shell/`A` `MatSetSizes` to `PETSC_DECIDE`.
+  **MINRES + Jacobi** already run on `PETSC_COMM_WORLD` (`src/init.cpp:51,58`) and parallelize
+  transparently once operands are distributed — the Krylov reductions become `MPI_Allreduce`.
+  *Milestone:* distributed solve matches the serial solve for a fixed RHS on 1/2/4 ranks (to tol).
+
+**2c — Distribute assembly, forces, enumeration.** `set_vars()` builds only the **local
+dumbbells'** pair/bond/chain lists (`src/init.cpp:202-324`); the `mob()` AB loop fills only local
+`Mcm_block` columns (`src/mob.cpp:983-1000`); `RHS()`/`bond_forces`/`trapping_forces` assemble the
+**local** force block (bonds intra-dumbbell → on-rank; trapping on the colloid-owning rank,
+`src/rhs.cpp:44-210`). **Broadcast** the colloid position/velocity each step (after `step()`) and
+**allreduce** any colloid force contribution. Draw the slip/drift noise **locally** per rank; the
+colloid Schur `syev` + slip stays replicated with the `M^cm·xi_m` allreduce from 2b (`src/slip_vel.cpp`).
+
+**2d — General case (later, out of primary scope).** `mono_ev=True` monomer–monomer WCA needs a
+**spatial** decomposition with a per-step **ghost-monomer halo exchange** + **reverse force
+scatter** for the Newton's-3rd-law writes in `monomer_wca` (`src/cell_list.cpp:98-172`), plus
+tether-to-colloid bonds and multi-colloid coupling. Note it; do not build it first.
+
+**Effort:** 2a ~2–3 days, 2b ~2 weeks (the crux), 2c ~1–2 weeks, 2d separate.
+The global `arrays::` namespace is fine for MPI (each rank is its own process) — but its
+contents must become *distributed* storage, which is the bulk of 2b–2c.
 
 ### Stage 3 — Hybrid + optional GPU *(only if Stage 0/2 justify it)*
 - **Hybrid MPI+OpenMP**: MPI across nodes, OpenMP (Stage 1) within each node — the usual
@@ -183,13 +248,16 @@ off the table. Validate **statistically** with the existing `bond_statistics` /
 `mm_HI=False` positive-definiteness / negative-eigenvalue diagnostics that motivated the
 double-precision concern above.
 
-## Orthogonal algorithmic lever (big payoff, independent of the above)
+## Orthogonal algorithmic lever
 `drift()` **doubles** the per-step `mob()`+solve cost with two RFD probes
-(`src/drift.cpp:32-54`). Two cheap wins that cut serial *and* parallel cost identically:
-(1) warm-start every saddle solve from the previous solution — the `run.cpp:52` TODO
-"re-use last solution as initial guess" is unimplemented for the deterministic/predictor
-solves; (2) reuse the predictor-stage `mob()` inside the RFD probe where the geometry
-barely moves. Worth doing before/alongside Stage 1.
+(`src/drift.cpp:32-54`).
+- **Warm-start the saddle solves — tried, net loss, reverted.** Reusing the previous solution
+  as the initial guess *increased* MINRES iterations (~19.5 → ~24 matvecs/solve): the operator
+  is reassembled every step and the adaptive Schur floor shifts it, so the prior solution is no
+  better than a zero guess and only adds iterations. Do not pursue. (Details in
+  [`profiling_baseline_serial.md`](profiling_baseline_serial.md).)
+- **Still open:** reuse the predictor-stage `mob()` inside the RFD probe where the geometry
+  barely moves — cuts a mobility assembly per step, serial *and* parallel. Not yet done.
 
 ## Critical files
 - `src/matfree_A.cpp` — arrowhead shell + work vectors (Stage 1 BLAS, Stage 2 distribute).
@@ -197,7 +265,8 @@ barely moves. Worth doing before/alongside Stage 1.
 - `src/cell_list.cpp`, `src/check_dist.cpp`, `src/rhs.cpp` — O(Nm) force/neighbor loops.
 - `src/drift.cpp`, `src/run.cpp:52,86-124` — RFD + predictor/corrector (warm-start lever).
 - `src/init.cpp:26-347`, `src/arrays.cpp` — solver/comm setup + global storage to distribute.
-- `CMakeLists.txt` — re-enable `find_package(OpenMP)` / `MPI` (both currently commented out).
+- `CMakeLists.txt` — `find_package(OpenMP)` is now in (optional/unused); **re-enable `MPI`**
+  (still commented out) for Stage 2.
 
 ## Verification
 - **Stage 0**: `-log_view` table at production Nm; commit as the baseline.

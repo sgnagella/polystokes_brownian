@@ -368,6 +368,11 @@ void PolyStokes::init(){
     SlepcInitialize(NULL, NULL, NULL, NULL);
     PetscPushErrorHandler(PetscAbortErrorHandler, NULL);
 
+    // MPI rank/size (PETSc's own MPI, from --download-mpich). Stage-2 scaffold: with data
+    // still replicated, every rank does identical work; I/O is guarded to rank 0 (run.cpp).
+    MPI_Comm_rank(PETSC_COMM_WORLD, &mpi_rank);
+    MPI_Comm_size(PETSC_COMM_WORLD, &mpi_size);
+
     // Opt-in profiling: start PETSc's default log handler so event timings accumulate
     // and PetscLogView() (end of run()) works. Off by default to keep production runs
     // clean; enable with POLYSTOKES_LOGVIEW=1.
@@ -394,6 +399,9 @@ void PolyStokes::init(){
 
     if(pinfo.kT > 0){
         std::cout << "Initializing random number generator..." << std::endl;
+        // Same seed on every rank while the noise fills are still replicated (Stage-2a): all
+        // ranks must draw the identical stream to stay in lockstep. Per-rank streams
+        // (seed = 12345 + mpi_rank) move here once the noise draws become local (Stage-2c).
         init_random(12345); // TODO: make seed an input parameter
         std::cout << "Initializing square-root (MFN) solver..." << std::endl;
         init_square_root_solver();
