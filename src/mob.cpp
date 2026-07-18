@@ -983,12 +983,25 @@ void PolyStokes::mob(){
         // SLOWER at 8 threads (per-thread boost::multi_array allocation contention across the
         // ~4 mob() calls/step). Kept serial. See docs/profiling_baseline_serial.md; the real
         // wins are MINRES + a good BLAS (OpenBLAS), not shared-memory threading of O(Nm) loops.
+        // Stage-2c: on >1 rank each rank fills ONLY its local monomers' columns of Mcm (rest
+        // zero), distributing the mobility_AB compute. The Schur (sync_mcc_schur_correction) and
+        // slip-vel then MPI_Allreduce the resulting local partials of M^cm(M^cm)^T / M^cm xi_m;
+        // the distributed solver reads only local columns. Serial (1 rank) fills all columns and
+        // this reduces to the original loop.
+        PetscInt m0 = 0, m1 = pinfo.Nm;
+        if (mpi_size > 1) {
+            PetscInt Nm_ = pinfo.Nm, base = Nm_ / mpi_size, rem = Nm_ % mpi_size;
+            m0 = mpi_rank * base + std::min((PetscInt)mpi_rank, rem);
+            m1 = m0 + base + (mpi_rank < rem ? 1 : 0);
+            for (PetscInt t = 0; t < (PetscInt)nc11 * nm3; t++) cm[t] = 0.0;
+        }
         rank2_array la(boost::extents[ndim][ndim]);
         rank2_array lb(boost::extents[ndim][ndim]);
         rank2_array lbt(boost::extents[ndim][ndim]);
         rank2_array lgt(boost::extents[ndim][const5]);
         for( int kp = 0; kp < npair_AB; kp++){
             int p = id_AB[kp];
+            if (mpi_size > 1 && (id[0][p] < m0 || id[0][p] >= m1)) continue;  // skip non-local monomers
             mobility_AB( pd[3][p], pd[4][p], pd[0][p], pd[1][p], pd[2][p], la, lb, lbt, lgt );
             int cph1 = ndim * id[0][p];                  // monomer translational base (columns)
             int c    = id[1][p];                         // colloid index

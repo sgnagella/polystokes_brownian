@@ -126,7 +126,21 @@ across ranks while the replicated `SELF` operator does not, so `mpiexec -n >1` a
 (`PCApply: local rows ≠ vector size`) until 2b actually distributes the operator. N-rank
 correctness therefore lands with 2b, not here.
 
-**2b — Distribute the operator + solve (the core).** Represent the state as a **VecNest** of
+**2b — Distribute the operator + solve (the core).** ✅ *implemented & verified*
+(`src/matfree_A_mpi.cpp`; commits "Stage 2b m1/m2/m3"). Realized with a per-rank-contiguous
+distributed vector `[u_m_loc | l_m_loc | (rank0: u_c, l_c)]` rather than a formal VecNest —
+`solve_saddle()` dispatches to `solve_saddle_distributed()` when `mpi_size>1` (persistent
+monomer-partitioned MINRES; colloid coupling = one `MPI_Allreduce` over nc11 + a broadcast per
+matvec; `B=[-I;0]` is a trivial local injection). Verified against serial: distributed matvec
+exact (~1e-15), distributed solve identical velocity-norm across 1/2/4 ranks, and the **full
+timestep loop** matches serial trajectories to the MINRES tolerance (~2e-6 over 100 steps) on
+2/4 ranks. Assembly is still replicated per rank (the bridge) — the per-step vectors are on
+`arrays::rep_comm` (= `PETSC_COMM_SELF` when `mpi_size>1`), so each rank assembles redundantly
+and only the solve is distributed. The solve (the ~91%) now scales; 2c removes the assembly bridge.
+
+<details><summary>Original 2b design sketch (VecNest formulation)</summary>
+
+Represent the state as a **VecNest** of
 `u_m` (nm3, MPI, monomer partition), `u_c` (nc11, replicated), `l` (nm3nc6, MPI). Rework
 `ArrowheadMult`/`ArrowheadGetDiagonal` (`src/matfree_A.cpp:38-102`) to act on the sub-vecs
 instead of manual index slices:
@@ -141,7 +155,11 @@ instead of manual index slices:
   transparently once operands are distributed — the Krylov reductions become `MPI_Allreduce`.
   *Milestone:* distributed solve matches the serial solve for a fixed RHS on 1/2/4 ranks (to tol).
 
-**2c — Distribute assembly, forces, enumeration.** `set_vars()` builds only the **local
+</details>
+
+**2c — Distribute assembly, forces, enumeration** *(in progress — removes the replicated
+bridge so each rank works on only its local monomers; lifts the ~6.5% assembly Amdahl ceiling
+and the replicated-`Mcm` memory).* `set_vars()` builds only the **local
 dumbbells'** pair/bond/chain lists (`src/init.cpp:202-324`); the `mob()` AB loop fills only local
 `Mcm_block` columns (`src/mob.cpp:983-1000`); `RHS()`/`bond_forces`/`trapping_forces` assemble the
 **local** force block (bonds intra-dumbbell → on-rank; trapping on the colloid-owning rank,

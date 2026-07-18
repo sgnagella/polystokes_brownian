@@ -105,6 +105,17 @@ void PolyStokes::sync_mcc_schur_correction(){
     // workspace Smat: S = Q diag(lambda) Q^T.
     Mat P;
     ierr = MatMatTransposeMult(Mcm_block, Mcm_block, MAT_INITIAL_MATRIX, PETSC_DEFAULT, &P); CHKERRV(ierr);
+    // Stage-2c: when the Mcm columns are distributed (mpi_size>1), each rank's Mcm holds only
+    // its local monomers' columns, so this product is the LOCAL partial of M^cm(M^cm)^T
+    // (= sum over local monomers of the outer products). Sum the nc11 x nc11 partials across
+    // ranks to get the full contraction on every rank.
+    if (mpi_size > 1) {
+        PetscScalar *Parr; ierr = MatDenseGetArray(P, &Parr); CHKERRV(ierr);
+        std::vector<PetscScalar> tmp((size_t)nc11 * nc11);
+        MPI_Allreduce(Parr, tmp.data(), nc11 * nc11, MPIU_SCALAR, MPIU_SUM, PETSC_COMM_WORLD);
+        std::copy(tmp.begin(), tmp.end(), Parr);
+        ierr = MatDenseRestoreArray(P, &Parr); CHKERRV(ierr);
+    }
     ierr = MatScale(P, -beta); CHKERRV(ierr);
     ierr = MatAXPY(P, 1.0, Mcc_base, SAME_NONZERO_PATTERN); CHKERRV(ierr);
     ierr = MatCopy(P, Smat, SAME_NONZERO_PATTERN); CHKERRV(ierr);
@@ -227,6 +238,16 @@ void PolyStokes::build_slip_vel_schur(){
     Vec uc;
     ierr = VecCreateSeq(PETSC_COMM_SELF, nc11, &uc); CHKERRV(ierr);
     ierr = MatMult(Mcm_block, xi_m, uc); CHKERRV(ierr);
+    // Stage-2c: with distributed Mcm columns this is the local partial of M^cm xi_m; sum the
+    // nc11 partials across ranks. (Dense Schur path only; the Lanczos path, nc11 > threshold,
+    // is not used in the single-colloid regime and would need the same treatment on its matvec.)
+    if (mpi_size > 1) {
+        PetscScalar *ua; ierr = VecGetArray(uc, &ua); CHKERRV(ierr);
+        std::vector<PetscScalar> tmp(nc11);
+        MPI_Allreduce(ua, tmp.data(), nc11, MPIU_SCALAR, MPIU_SUM, PETSC_COMM_WORLD);
+        std::copy(tmp.begin(), tmp.end(), ua);
+        ierr = VecRestoreArray(uc, &ua); CHKERRV(ierr);
+    }
     ierr = VecScale(uc, PetscSqrtReal(beta)); CHKERRV(ierr);
 
     // Add S^{1/2} xi_c onto uc, where S = M^cc - beta M^cm M^mc = Ccc - beta Bcm Bcm^T.

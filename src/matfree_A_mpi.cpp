@@ -45,10 +45,19 @@ bool PolyStokes::verify_distributed_matvec()
     const PetscScalar *u_c = &x[nm3];
     const PetscScalar *l   = &x[nm3nc11];          // l_m = l[0:nm3], l_c = l[nm3:nm3nc6]
 
-    // Replicated dense blocks (column-major, lda = nc11).
-    const PetscScalar *cm, *cc;
-    MatDenseGetArrayRead(Mcm_block, &cm);
+    // Dense blocks (column-major, lda = nc11). Post-2c, Mcm_block holds only this rank's local
+    // columns (the rest zero), so reconstruct the FULL Mcm here (sum the disjoint local columns
+    // across ranks) to form a valid serial reference; on 1 rank it is already full.
+    const PetscScalar *cm_raw, *cc;
+    MatDenseGetArrayRead(Mcm_block, &cm_raw);
     MatDenseGetArrayRead(Mcc_block, &cc);
+    std::vector<PetscScalar> cm_buf;
+    const PetscScalar *cm = cm_raw;
+    if (mpi_size > 1) {
+        cm_buf.resize((size_t)nc11 * nm3);
+        MPI_Allreduce(cm_raw, cm_buf.data(), (int)((size_t)nc11*nm3), MPIU_SCALAR, MPIU_SUM, PETSC_COMM_WORLD);
+        cm = cm_buf.data();
+    }
     auto Mcm = [&](PetscInt k, PetscInt i){ return cm[k + i * nc11]; };   // M^cm[k,i]
     auto Mcc = [&](PetscInt k, PetscInt kk){ return cc[k + kk * nc11]; }; // M^cc[k,kk]
 
@@ -102,7 +111,7 @@ bool PolyStokes::verify_distributed_matvec()
     }
     for (PetscInt j = 0; j < nc6; j++) ylc[j] = -u_c[j];
 
-    MatDenseRestoreArrayRead(Mcm_block, &cm);
+    MatDenseRestoreArrayRead(Mcm_block, &cm_raw);
     MatDenseRestoreArrayRead(Mcc_block, &cc);
 
     // Gather the distributed monomer outputs back to full replicated arrays for comparison.
