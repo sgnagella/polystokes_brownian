@@ -167,11 +167,14 @@ serial trajectories to the MINRES tolerance on 1/2/4 ranks):
   the replicated trap. *(2c-2)*
 - `bond_forces` stays replicated (writes only monomer slots — correct per-rank-local).
 
-**Remaining 2c (optional polish, not compute-critical):** `Mcm_block` still allocates the full
-`nc11 × nm3` per rank (only local columns filled) — switching to `nc11 × nm3_local` caps
-per-rank memory for *very* large Nm (touches the Schur/slip-vel matrix dims + the solver's
-column read). Per-rank RNG streams (then validation moves from trajectory-match to the
-`bond`/`trap` statistical oracles). `set_vars()` still builds the full replicated lists.
+- **`Mcm_block` memory** ✅ now stores only local columns (`nc11 × 3·nloc`) per rank via the
+  shared `arrays::mono_partition()`, so its memory scales with ranks and the per-step full-Mcm
+  zeroing is gone. slip-vel uses a local `xi_m` slice; the solver reads local columns directly;
+  the self-check reconstructs full Mcm via `Allgatherv`.
+
+**Remaining 2c (optional, not compute/memory-critical):** per-rank RNG streams (then validation
+moves from trajectory-match to the `bond`/`trap` statistical oracles); `set_vars()` still builds
+the full replicated pair/bond lists (small integer vectors — localize only if Nm memory demands).
 
 <details><summary>Original 2c sketch</summary>
 
