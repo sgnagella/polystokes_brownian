@@ -119,6 +119,16 @@ namespace arrays{
     // Must be assigned before alok_arrays().
     extern MPI_Comm rep_comm;
 
+    // Even, contiguous monomer partition shared by every MPI site (Mcm column ownership, the
+    // mob()/check_dist local filters, and the distributed solver) so they cannot disagree.
+    // Rank r owns monomers [m0, m0+nloc). On 1 rank: m0=0, nloc=Nm.
+    inline void mono_partition(PetscInt Nm, PetscMPIInt rank, PetscMPIInt size,
+                               PetscInt& m0, PetscInt& nloc) {
+        PetscInt base = Nm / size, rem = Nm % size;
+        m0   = rank * base + (rank < rem ? rank : rem);
+        nloc = base + (rank < rem ? 1 : 0);
+    }
+
     // extern rank2_array zm; // grand mobility matrix
 
     // Functions to initialize the global arrays

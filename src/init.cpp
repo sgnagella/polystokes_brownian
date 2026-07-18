@@ -151,7 +151,13 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts, bool mm_HI){
     std::cout << "PETSC arrays ..." << std::endl;
     // No separate grand mobility M: it is assembled directly into A's top-left block.
     // Arrowhead mobility pieces (M^cm, M^cc) shared by the saddle operator and the sqrt.
-    initialize_arrowhead(consts.nc11, consts.nm3);
+    // Under MPI, Mcm stores only this rank's local monomer columns (memory scales with ranks).
+    PetscMPIInt _rank, _size;
+    MPI_Comm_rank(PETSC_COMM_WORLD, &_rank);
+    MPI_Comm_size(PETSC_COMM_WORLD, &_size);
+    PetscInt _m0, _nloc; arrays::mono_partition(pinfo.Nm, _rank, _size, _m0, _nloc);
+    PetscInt mcm_cols = (_size > 1) ? consts.ndim * _nloc : consts.nm3;
+    initialize_arrowhead(consts.nc11, mcm_cols);
     initialize_B(consts.nm3nc11, consts.nm3nc6);
     std::cout << "A" << std::endl;
     if( mm_HI ){

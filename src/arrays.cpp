@@ -326,10 +326,12 @@ namespace arrays{
         MatSetUp(M);
     }
 
-    void initialize_arrowhead(PetscInt nc11, PetscInt nm3){
-        // M^cm : nc11 x nm3 colloid<->monomer coupling (rebuilt each step in mob()).
+    void initialize_arrowhead(PetscInt nc11, PetscInt mcm_cols){
+        // M^cm : nc11 x mcm_cols colloid<->monomer coupling (rebuilt each step in mob()).
+        // mcm_cols = nm3 in serial, or this rank's local 3*nloc under MPI (only local monomer
+        // columns are stored/filled; the Schur and slip-vel contractions Allreduce the partials).
         MatCreate(PETSC_COMM_SELF, &Mcm_block);
-        MatSetSizes(Mcm_block, PETSC_DECIDE, PETSC_DECIDE, nc11, nm3);
+        MatSetSizes(Mcm_block, PETSC_DECIDE, PETSC_DECIDE, nc11, mcm_cols);
         MatSetType(Mcm_block, MATDENSE);
         MatSetUp(Mcm_block);
         // M^cc : nc11 x nc11 colloid self-mobility. Mcc_base holds the raw physics

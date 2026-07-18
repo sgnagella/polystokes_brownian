@@ -237,10 +237,21 @@ void PolyStokes::build_slip_vel_schur(){
     // Cross term: uc = sqrt(beta) * (M^cm xi_m).
     Vec uc;
     ierr = VecCreateSeq(PETSC_COMM_SELF, nc11, &uc); CHKERRV(ierr);
-    ierr = MatMult(Mcm_block, xi_m, uc); CHKERRV(ierr);
-    // Stage-2c: with distributed Mcm columns this is the local partial of M^cm xi_m; sum the
-    // nc11 partials across ranks. (Dense Schur path only; the Lanczos path, nc11 > threshold,
-    // is not used in the single-colloid regime and would need the same treatment on its matvec.)
+    // Stage-2c: Mcm_block holds only this rank's local columns, so M^cm xi_m needs the LOCAL
+    // slice of the (replicated) noise, and the result is a partial summed across ranks. xi_m
+    // itself stays full for the monomer slip u_m below.
+    Vec xi_m_use = xi_m; Vec xi_m_loc = nullptr;
+    if (mpi_size > 1) {
+        PetscInt m0, nloc; arrays::mono_partition(pinfo.Nm, mpi_rank, mpi_size, m0, nloc);
+        ierr = VecCreateSeq(PETSC_COMM_SELF, 3*nloc, &xi_m_loc); CHKERRV(ierr);
+        PetscScalar *xl; ierr = VecGetArray(xi_m_loc, &xl); CHKERRV(ierr);
+        for (PetscInt t = 0; t < 3*nloc; t++) xl[t] = fb[3*m0 + t];
+        ierr = VecRestoreArray(xi_m_loc, &xl); CHKERRV(ierr);
+        xi_m_use = xi_m_loc;
+    }
+    ierr = MatMult(Mcm_block, xi_m_use, uc); CHKERRV(ierr);
+    // (Dense Schur path only; the Lanczos path, nc11 > threshold, is not used in the
+    // single-colloid regime and would need the same treatment on its matvec.)
     if (mpi_size > 1) {
         PetscScalar *ua; ierr = VecGetArray(uc, &ua); CHKERRV(ierr);
         std::vector<PetscScalar> tmp(nc11);
@@ -248,6 +259,7 @@ void PolyStokes::build_slip_vel_schur(){
         std::copy(tmp.begin(), tmp.end(), ua);
         ierr = VecRestoreArray(uc, &ua); CHKERRV(ierr);
     }
+    if (xi_m_loc) { ierr = VecDestroy(&xi_m_loc); CHKERRV(ierr); }
     ierr = VecScale(uc, PetscSqrtReal(beta)); CHKERRV(ierr);
 
     // Add S^{1/2} xi_c onto uc, where S = M^cc - beta M^cm M^mc = Ccc - beta Bcm Bcm^T.

@@ -988,12 +988,12 @@ void PolyStokes::mob(){
         // slip-vel then MPI_Allreduce the resulting local partials of M^cm(M^cm)^T / M^cm xi_m;
         // the distributed solver reads only local columns. Serial (1 rank) fills all columns and
         // this reduces to the original loop.
-        PetscInt m0 = 0, m1 = pinfo.Nm;
+        PetscInt m0 = 0, m1 = pinfo.Nm, nloc = pinfo.Nm;
         if (mpi_size > 1) {
-            PetscInt Nm_ = pinfo.Nm, base = Nm_ / mpi_size, rem = Nm_ % mpi_size;
-            m0 = mpi_rank * base + std::min((PetscInt)mpi_rank, rem);
-            m1 = m0 + base + (mpi_rank < rem ? 1 : 0);
-            for (PetscInt t = 0; t < (PetscInt)nc11 * nm3; t++) cm[t] = 0.0;
+            arrays::mono_partition(pinfo.Nm, mpi_rank, mpi_size, m0, nloc);
+            m1 = m0 + nloc;
+            // (Mcm_block was already zeroed by MatZeroEntries at the top of mob(); every local
+            // monomer has exactly one AB pair, so all local columns are then overwritten.)
         }
         rank2_array la(boost::extents[ndim][ndim]);
         rank2_array lb(boost::extents[ndim][ndim]);
@@ -1003,7 +1003,9 @@ void PolyStokes::mob(){
             int p = id_AB[kp];
             if (mpi_size > 1 && (id[0][p] < m0 || id[0][p] >= m1)) continue;  // skip non-local monomers
             mobility_AB( pd[3][p], pd[4][p], pd[0][p], pd[1][p], pd[2][p], la, lb, lbt, lgt );
-            int cph1 = ndim * id[0][p];                  // monomer translational base (columns)
+            // Column base into Mcm: global monomer DOF in serial, LOCAL monomer DOF under MPI
+            // (Mcm holds only this rank's nloc columns).
+            int cph1 = ndim * ((mpi_size > 1) ? (id[0][p] - (int)m0) : id[0][p]);
             int c    = id[1][p];                         // colloid index
             int cph2 = ndim * c;                         // colloid translational base (rows)
             int cph4 = cph2 + nc3;                        // colloid rotational base

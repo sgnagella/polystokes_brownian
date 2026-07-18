@@ -54,8 +54,16 @@ bool PolyStokes::verify_distributed_matvec()
     std::vector<PetscScalar> cm_buf;
     const PetscScalar *cm = cm_raw;
     if (mpi_size > 1) {
-        cm_buf.resize((size_t)nc11 * nm3);
-        MPI_Allreduce(cm_raw, cm_buf.data(), (int)((size_t)nc11*nm3), MPIU_SCALAR, MPIU_SUM, PETSC_COMM_WORLD);
+        // Mcm_block holds only this rank's local columns; gather them into the full nc11 x nm3.
+        PetscInt m0, nloc; arrays::mono_partition(Nm, mpi_rank, mpi_size, m0, nloc);
+        cm_buf.assign((size_t)nc11 * nm3, 0.0);
+        std::vector<int> cnts(mpi_size), disp(mpi_size);
+        for (int r = 0; r < mpi_size; r++) {
+            PetscInt rm0, rnl; arrays::mono_partition(Nm, r, mpi_size, rm0, rnl);
+            cnts[r] = nc11 * 3 * (int)rnl; disp[r] = nc11 * 3 * (int)rm0;
+        }
+        MPI_Allgatherv(cm_raw, nc11 * 3 * (int)nloc, MPIU_SCALAR, cm_buf.data(),
+                       cnts.data(), disp.data(), MPIU_SCALAR, PETSC_COMM_WORLD);
         cm = cm_buf.data();
     }
     auto Mcm = [&](PetscInt k, PetscInt i){ return cm[k + i * nc11]; };   // M^cm[k,i]
@@ -296,8 +304,9 @@ void PolyStokes::solve_saddle_distributed(Vec X_out, bool warm_start)
     // Refresh the colloid coupling each step (Mcm_block/Mcc_block are reassembled by mob()).
     const PetscScalar *cm; MatDenseGetArrayRead(Mcm_block, &cm);
     d.ctx.Mcm_loc.resize((size_t)nc11*d.dloc);
-    for (PetscInt jl = 0; jl < d.dloc; jl++)
-        for (PetscInt k = 0; k < nc11; k++) d.ctx.Mcm_loc[k + jl*nc11] = cm[k + (d.d0+jl)*nc11];
+    // Mcm_block now stores only this rank's local columns (0..dloc); on 1 rank d0=0 so this is
+    // also the full matrix. Copy them straight through (no global-column offset).
+    std::copy(cm, cm + (size_t)nc11*d.dloc, d.ctx.Mcm_loc.begin());
     MatDenseRestoreArrayRead(Mcm_block, &cm);
     const PetscScalar *cc; MatDenseGetArrayRead(Mcc_block, &cc);
     std::copy(cc, cc + (size_t)nc11*nc11, d.Mcc_copy.begin());
