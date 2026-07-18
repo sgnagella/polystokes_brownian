@@ -2,6 +2,7 @@
 #include "arrays.h"
 #include "pair_interaction.h"
 #include <math.h>
+#include <vector>
 #include "Stokes.h"
 
 using namespace arrays;
@@ -190,10 +191,22 @@ void PolyStokes::RHS(bool drift){
     // path -- when mm_HI is on, AA pairs are enumerated into vlist and handled by
     // pair_interaction above. The cell list is (re)built once per step in run().
     if( !mm_HI && mono_ev ){
-        monomer_wca(fint);
+        monomer_wca(fint);   // NOTE: monomer-monomer WCA under MPI needs a halo (Stage 2d); not localized here
+    }
+    bond_forces(fint, consts, pinfo, fene, box);
+
+    // Stage-2c: check_dist() gave each rank only its LOCAL monomers' Verlet pairs, so
+    // pair_interaction() accumulated only a PARTIAL colloid force fint[nm3:nm3nc3] (sum over
+    // local monomers). Reduce it across ranks BEFORE adding the (replicated) trap. The monomer
+    // force slots stay per-rank-local -- the distributed solver reads only its own. bond_forces
+    // is replicated (writes only monomer slots), which is correct for each rank's local rows.
+    if (mpi_size > 1) {
+        PetscInt nc3_ = consts.nc3;
+        std::vector<PetscScalar> tmp(nc3_);
+        MPI_Allreduce(&fint[nm3], tmp.data(), nc3_, MPIU_SCALAR, MPIU_SUM, PETSC_COMM_WORLD);
+        for (PetscInt t = 0; t < nc3_; t++) fint[nm3 + t] = tmp[t];
     }
     trapping_forces(fint, consts, coeffs, pinfo, trapinfo, timeinfo.t, box);
-    bond_forces(fint, consts, pinfo, fene, box);
 
     // Print fint
     // std::cout << "fint: " << std::endl;

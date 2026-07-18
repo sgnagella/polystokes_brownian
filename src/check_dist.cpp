@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <cmath>
+#include <algorithm>
 #include "data.h"
 #include "arrays.h"
 #include "Stokes.h"
@@ -16,6 +17,19 @@ void PolyStokes::check_dist(){
 
     std::vector<float> &rverls = dataStruct.rverls;
     for( ii = 0; ii < (pinfo.Np-1); ii++ ){ vlist[ii].clear(); }
+
+    // Stage-2c: on >1 rank each rank computes pd/vlist ONLY for pairs whose first (row) particle
+    // is a local monomer, matching the mob() column partition. mob() then reads local pd, and
+    // pair_interaction() reads the local vlist (empty for non-local rows), so its monomer WCA is
+    // local and its colloid contribution is a partial that RHS() reduces. Colloid-row (BB) pairs
+    // are kept on every rank (none exist for a single colloid). Serial (1 rank) does all pairs.
+    PetscInt m0 = 0, m1 = pinfo.Nm;
+    if (mpi_size > 1) {
+        PetscInt Nm = pinfo.Nm, base = Nm / mpi_size, rem = Nm % mpi_size;
+        m0 = mpi_rank * base + std::min((PetscInt)mpi_rank, rem);
+        m1 = m0 + base + (mpi_rank < rem ? 1 : 0);
+    }
+
     // Iterate over the stored pairs. When mm_HI these are all pairs (AA first, then AB,
     // BB). When mm_HI is off, only AB + BB are stored (npair_stored); the monomer-monomer
     // (AA) pairs are found separately by the cell list (build_monomer_cell_list /
@@ -24,6 +38,9 @@ void PolyStokes::check_dist(){
 
         kk = id[0][ii];
         jj = id[1][ii];
+
+        // Skip pairs whose monomer row is not local to this rank (keep colloid-row pairs).
+        if (mpi_size > 1 && kk < pinfo.Nm && (kk < m0 || kk >= m1)) continue;
 
         k3 = consts.ndim * kk; 
         j3 = consts.ndim * jj;
