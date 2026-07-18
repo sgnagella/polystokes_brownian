@@ -3,6 +3,7 @@
 #include <petscmat.h>
 #include "params.h"
 #include "data.h"
+#include <cmath>
 
 // Repulsive WCA force MAGNITUDE F(r) = (24*eps/r) * (2*(sigma/r)^12 - (sigma/r)^6)
 // for r < rcut = 2^(1/6)*sigma; returns 0 at/beyond the cutoff. Multiply by the
@@ -63,7 +64,15 @@ inline double hs_force_mag(double dr, double sig, double k){
     return k * (sig_eff - dr);               // > 0 for overlap => repulsive
 }
 
+inline double hs_exp_force_mag(double dr, double sig, double k){
+    constexpr double HS_REG = 0.01;         // 1% contact-distance shift
+    double sig_eff = sig * (1.0 + HS_REG);
+    double exp = std::exp(-k * (dr - sig_eff));
+    return exp/(1-exp);
+}
+
 void pair_interaction(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, Data& dataStruct, bool mono_ev);
 void pair_interaction_highexp(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, Data& dataStruct, bool mono_ev);
 void pair_interaction_hs(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, Data& dataStruct, bool mono_ev, double dt);
+void pair_interaction_hs_exp(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, Data& dataStruct, bool mono_ev);
 #endif

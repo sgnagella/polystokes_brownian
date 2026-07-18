@@ -105,7 +105,7 @@ void pair_interaction_hs(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo
     // marginally deeper than kpref=1 in mild ones), so it is the default.
     // Two env knobs (read once) allow re-tuning without recompiling: HS_KPREF is the multiplier;
     // HS_KMODE=1 switches to the 1/beta scaling (k = kpref/(dt*beta)) for experimentation.
-    static const double kpref = [](){ const char* s = getenv("HS_KPREF"); return s ? atof(s) : 0.3; }();
+    static const double kpref = [](){ const char* s = getenv("HS_KPREF"); return s ? atof(s) : 1.0; }();
     static const int    kmode = [](){ const char* s = getenv("HS_KMODE"); return s ? atoi(s) : 0;   }();
     const double k = (kmode == 1) ? kpref / (dt * pinfo.beta) : kpref / dt;
 
@@ -182,6 +182,66 @@ void pair_interaction_highexp(PetscScalar fext[], Consts& consts, ParticleInfo& 
 
             // Repulsive high-exponent force magnitude (0 at/beyond r = sig_eff = 1.1*sigma).
             fmag = highexp_force_mag(dr, dr_inv, sig, epsilon);
+            if( fmag == 0.0 ){
+                continue;
+            }
+
+            // Separation unit vector points from jj to kk (dx = x_kk - x_jj), so a
+            // positive fmag pushes kk away from jj (repulsion).
+            fx = fmag * pd[0][pidx];
+            fy = fmag * pd[1][pidx];
+            fz = fmag * pd[2][pidx];
+
+            kk3 = ndimp * kk;
+            jj3 = ndimp * jj;
+
+            // fext stores the negative of the physical force (cf. pair_interaction).
+            fext[kk3]   -= fx;
+            fext[kk3+1] -= fy;
+            fext[kk3+2] -= fz;
+            fext[jj3]   += fx;
+            fext[jj3+1] += fy;
+            fext[jj3+2] += fz;
+        }
+    }
+}
+
+void pair_interaction_hs_exp(PetscScalar fext[], Consts& consts, ParticleInfo& pinfo, Data& dataStruct, bool mono_ev){
+    // Drop-in alternative to pair_interaction() using the asymmetric-harmonic hard-sphere
+    // repulsion (see hs_force_mag in the header): a linear F = k*(sig_eff - r) that acts only
+    // on overlapping pairs, with k = 1/dt so the correction is O(overlap) per step regardless
+    // of dt. Unlike WCA (too soft: residual overlaps make the mobility non-positive-definite)
+    // and the high-exponent LJ (too stiff: force diverges and overshoots), this pushes
+    // overlapping pairs apart by ~the overlap each step without blowing up. Pair enumeration,
+    // the mono_ev gating, and the fext sign convention match pair_interaction().
+
+    int kk, jj, kk3, jj3, type_id;
+    PetscInt& ndimp = consts.ndimp;
+    PetscInt& Np = pinfo.Np;
+    double dr, sig, fmag, fx, fy, fz;
+    std::vector<float> &sigmas = dataStruct.sigmas;
+
+    // Stiffness k of the inverse-exponential (Bose-Einstein) barrier 1/(exp(k*(r-sig_eff))-1):
+    // sets the width (~1/k) of the repulsive shoulder outside contact. Larger k => harder core.
+    // Read once from HS_EXP_K (default 100); typical values O(10-1000).
+    static const double kexp = [](){ const char* s = getenv("HS_EXP_K"); return s ? atof(s) : 100.0; }();
+
+    for( kk = 0; kk < (Np-1); kk++ ){
+        for( int pidx : vlist[kk] ){
+            type_id = pair_types[pidx];
+
+            // Skip monomer-monomer pairs unless excluded volume is enabled.
+            if (type_id == 0 && !mono_ev){
+                continue;
+            }
+
+            jj = id[1][pidx];
+
+            sig = sigmas[type_id];
+            dr  = pd[3][pidx];
+
+            // Repulsive inverse-exponential barrier force magnitude (see hs_exp_force_mag).
+            fmag = hs_exp_force_mag(dr, sig, kexp);
             if( fmag == 0.0 ){
                 continue;
             }

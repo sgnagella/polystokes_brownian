@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include "arrays.h"
 #include "pair_interaction.h"
@@ -186,12 +187,16 @@ void PolyStokes::RHS(bool drift){
 
     std::fill(fint, fint + nm3nc3, 0.0);
     
-    // Asymmetric-harmonic hard-sphere repulsion (k = 1/dt) in place of WCA: WCA is too soft to
-    // keep the colloid and monomers apart, leaving overlaps that make the mobility operator
-    // non-positive-definite, while the high-exponent LJ is too stiff and overshoots. This
-    // linear overlap-removal force is stable at fixed dt. pair_interaction() (WCA) and
-    // pair_interaction_highexp() are retained for reference/fallback.
-    pair_interaction_hs(fint, consts, pinfo, dataStruct, mono_ev, dt);
+    // Excluded-volume force selector (read once). Default (0) is the tuned asymmetric-harmonic
+    // hard-sphere spring (k = kpref/dt); POLYSTOKES_FORCE=1 selects the exponential variant
+    // (pair_interaction_hs_exp) for A/B comparison. WCA (pair_interaction) and the high-exponent
+    // LJ (pair_interaction_highexp) remain available for reference/fallback.
+    static const int force_sel = [](){ const char* s = getenv("POLYSTOKES_FORCE"); return s ? atoi(s) : 0; }();
+    if (force_sel == 1) {
+        pair_interaction_hs_exp(fint, consts, pinfo, dataStruct, mono_ev);
+    } else {
+        pair_interaction_hs(fint, consts, pinfo, dataStruct, mono_ev, dt);
+    }
     // Monomer-monomer (AA) excluded volume via the cell list. Only in the mm_HI==false
     // path -- when mm_HI is on, AA pairs are enumerated into vlist and handled by
     // pair_interaction above. The cell list is (re)built once per step in run().
