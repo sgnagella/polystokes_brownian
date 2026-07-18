@@ -1,8 +1,0 @@
-{
-  "source_dir": "/mnt/sda_DATA/Projects/polystokes_brownian",
-  "build_dir": "/mnt/sda_DATA/Projects/polystokes_brownian/build",
-  "cmake_path": "/usr/bin/cmake",
-  "skbuild_path": "/tmp/pip-build-env-hyu_9gom/overlay/lib/python3.11/site-packages/scikit_build_core",
-  "skbuild_version": "1.0.3",
-  "python_executable": "/home/takalab/anaconda3/envs/polystokes/bin/python3.11"
-}
