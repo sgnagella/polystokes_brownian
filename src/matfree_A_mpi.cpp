@@ -229,119 +229,133 @@ PetscErrorCode DistDiag(Mat A, Vec d)
     return 0;
 }
 
+// Persistent distributed solver (built once, reused every step). One sim per process, so a
+// file-static instance is fine (matches the code's existing one-sim-per-process assumption).
+struct DistSolver {
+    bool built = false;
+    DistCtx ctx;
+    std::vector<PetscScalar> Mcc_copy;
+    Mat Ampi = nullptr; Vec bmpi = nullptr, xmpi = nullptr; KSP kmpi = nullptr;
+    PetscInt base = 0, rem = 0, m0 = 0, nm_loc = 0, d0 = 0, dloc = 0, local_size = 0;
+    std::vector<int> cnts, disp;
+};
+
 } // anonymous namespace
 
-bool PolyStokes::verify_distributed_solve()
+static DistSolver g_ds;
+
+// Distributed MINRES solve, used by solve_saddle() when mpi_size > 1. Reads the replicated rhs
+// (arrays::rhs is SELF/full on every rank when mpi_size>1), solves the monomer-partitioned
+// system, and writes the full solution back into the replicated X_out. See the file header and
+// verify_distributed_matvec/_solve (POLYSTOKES_MPI_SELFTEST) for the correctness checks.
+void PolyStokes::solve_saddle_distributed(Vec X_out, bool warm_start)
 {
     const PetscInt nm3 = consts.nm3, nc11 = consts.nc11, nc6 = consts.nc6;
-    const PetscInt nm3nc6 = consts.nm3nc6, nm3nc11 = consts.nm3nc11, nm6nc17 = consts.nm6nc17;
+    const PetscInt nm3nc11 = consts.nm3nc11, nm3nc6 = consts.nm3nc6, nm6nc17 = consts.nm6nc17;
     const PetscInt Nm = pinfo.Nm;
+    DistSolver &d = g_ds;
 
-    // Monomer partition (even, contiguous).
-    const PetscInt base = Nm / mpi_size, rem = Nm % mpi_size;
-    const PetscInt m0 = mpi_rank * base + std::min((PetscInt)mpi_rank, rem);
-    const PetscInt nm_loc = base + (mpi_rank < rem ? 1 : 0);
-    const PetscInt d0 = 3 * m0, dloc = 3 * nm_loc;
-    const PetscInt local_size = 2*dloc + (mpi_rank == 0 ? nc11 + nc6 : 0);
+    if (!d.built) {                     // one-time setup: partition, shell, vectors, KSP
+        d.base = Nm / mpi_size; d.rem = Nm % mpi_size;
+        d.m0 = mpi_rank * d.base + std::min((PetscInt)mpi_rank, d.rem);
+        d.nm_loc = d.base + (mpi_rank < d.rem ? 1 : 0);
+        d.d0 = 3 * d.m0; d.dloc = 3 * d.nm_loc;
+        d.local_size = 2*d.dloc + (mpi_rank == 0 ? nc11 + nc6 : 0);
+        d.ctx.rank = mpi_rank; d.ctx.size = mpi_size;
+        d.ctx.nm3 = nm3; d.ctx.nc11 = nc11; d.ctx.nc6 = nc6;
+        d.ctx.nm3nc6 = nm3nc6; d.ctx.nm3nc11 = nm3nc11; d.ctx.nm6nc17 = nm6nc17;
+        d.ctx.d0 = d.d0; d.ctx.dloc = d.dloc; d.ctx.beta_inv = pinfo.beta_inv;
+        d.Mcc_copy.resize((size_t)nc11*nc11); d.ctx.Mcc = d.Mcc_copy.data();
+        MatCreateShell(PETSC_COMM_WORLD, d.local_size, d.local_size, nm6nc17, nm6nc17, &d.ctx, &d.Ampi);
+        MatShellSetOperation(d.Ampi, MATOP_MULT,         (void(*)(void))DistMult);
+        MatShellSetOperation(d.Ampi, MATOP_GET_DIAGONAL, (void(*)(void))DistDiag);
+        VecCreateMPI(PETSC_COMM_WORLD, d.local_size, nm6nc17, &d.bmpi);
+        VecDuplicate(d.bmpi, &d.xmpi);
+        KSPCreate(PETSC_COMM_WORLD, &d.kmpi);
+        KSPSetOperators(d.kmpi, d.Ampi, d.Ampi);
+        KSPSetType(d.kmpi, KSPMINRES);
+        PC pc; KSPGetPC(d.kmpi, &pc); PCSetType(pc, PCJACOBI); PCJacobiSetFixDiagonal(pc, PETSC_TRUE);
+        KSPSetTolerances(d.kmpi, 1e-6, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
+        d.cnts.resize(mpi_size); d.disp.resize(mpi_size);
+        for (int r = 0; r < mpi_size; r++) {
+            PetscInt rm0 = r*d.base + std::min((PetscInt)r, d.rem), rnm = d.base + (r < d.rem ? 1 : 0);
+            d.cnts[r] = 3*rnm; d.disp[r] = 3*rm0;
+        }
+        d.built = true;
+    }
 
-    // Replicate the current rhs onto every rank.
-    VecScatter toall; Vec rhs_all;
-    VecScatterCreateToAll(rhs, &toall, &rhs_all);
-    VecScatterBegin(toall, rhs, rhs_all, INSERT_VALUES, SCATTER_FORWARD);
-    VecScatterEnd(toall, rhs, rhs_all, INSERT_VALUES, SCATTER_FORWARD);
-    const PetscScalar *ra; VecGetArrayRead(rhs_all, &ra);
-    std::vector<PetscScalar> rhs_full(ra, ra + nm6nc17);
-    VecRestoreArrayRead(rhs_all, &ra);
-    VecScatterDestroy(&toall); VecDestroy(&rhs_all);
-
-    // Build the distributed context (extract this rank's Mcm columns).
-    DistCtx c;
-    c.rank = mpi_rank; c.size = mpi_size;
-    c.nm3 = nm3; c.nc11 = nc11; c.nc6 = nc6; c.nm3nc6 = nm3nc6; c.nm3nc11 = nm3nc11; c.nm6nc17 = nm6nc17;
-    c.d0 = d0; c.dloc = dloc; c.beta_inv = pinfo.beta_inv;
+    // Refresh the colloid coupling each step (Mcm_block/Mcc_block are reassembled by mob()).
     const PetscScalar *cm; MatDenseGetArrayRead(Mcm_block, &cm);
-    c.Mcm_loc.resize((size_t)nc11 * dloc);
-    for (PetscInt jl = 0; jl < dloc; jl++)
-        for (PetscInt k = 0; k < nc11; k++) c.Mcm_loc[k + jl*nc11] = cm[k + (d0 + jl)*nc11];
+    d.ctx.Mcm_loc.resize((size_t)nc11*d.dloc);
+    for (PetscInt jl = 0; jl < d.dloc; jl++)
+        for (PetscInt k = 0; k < nc11; k++) d.ctx.Mcm_loc[k + jl*nc11] = cm[k + (d.d0+jl)*nc11];
     MatDenseRestoreArrayRead(Mcm_block, &cm);
     const PetscScalar *cc; MatDenseGetArrayRead(Mcc_block, &cc);
-    std::vector<PetscScalar> Mcc_copy(cc, cc + (size_t)nc11*nc11);
+    std::copy(cc, cc + (size_t)nc11*nc11, d.Mcc_copy.begin());
     MatDenseRestoreArrayRead(Mcc_block, &cc);
-    c.Mcc = Mcc_copy.data();
 
-    // Distributed shell + vectors.
-    Mat Ampi; MatCreateShell(PETSC_COMM_WORLD, local_size, local_size, nm6nc17, nm6nc17, &c, &Ampi);
-    MatShellSetOperation(Ampi, MATOP_MULT,         (void(*)(void))DistMult);
-    MatShellSetOperation(Ampi, MATOP_GET_DIAGONAL, (void(*)(void))DistDiag);
-    Vec bmpi, xmpi; VecCreateMPI(PETSC_COMM_WORLD, local_size, nm6nc17, &bmpi); VecDuplicate(bmpi, &xmpi);
-
-    // Fill b from the replicated rhs (per-rank layout) and solve.
-    PetscScalar *ba; VecGetArray(bmpi, &ba);
-    for (PetscInt jl = 0; jl < dloc; jl++) { ba[jl] = rhs_full[d0 + jl]; ba[dloc + jl] = rhs_full[nm3nc11 + d0 + jl]; }
+    // Fill b from the replicated rhs (per-rank layout: [u_m_loc | l_m_loc | (r0: u_c, l_c)]).
+    const PetscScalar *ra; VecGetArrayRead(rhs, &ra);
+    PetscScalar *ba; VecGetArray(d.bmpi, &ba);
+    for (PetscInt jl = 0; jl < d.dloc; jl++) { ba[jl] = ra[d.d0+jl]; ba[d.dloc+jl] = ra[nm3nc11+d.d0+jl]; }
     if (mpi_rank == 0) {
-        for (PetscInt k = 0; k < nc11; k++) ba[2*dloc + k]        = rhs_full[nm3 + k];
-        for (PetscInt j = 0; j < nc6;  j++) ba[2*dloc + nc11 + j] = rhs_full[nm3nc11 + nm3 + j];
+        for (PetscInt k = 0; k < nc11; k++) ba[2*d.dloc + k]        = ra[nm3 + k];
+        for (PetscInt j = 0; j < nc6;  j++) ba[2*d.dloc + nc11 + j] = ra[nm3nc11 + nm3 + j];
     }
-    VecRestoreArray(bmpi, &ba);
-    VecSet(xmpi, 0.0);
+    VecRestoreArray(d.bmpi, &ba); VecRestoreArrayRead(rhs, &ra);
 
-    KSP kmpi; PC pmpi;
-    KSPCreate(PETSC_COMM_WORLD, &kmpi);
-    KSPSetOperators(kmpi, Ampi, Ampi);
-    KSPSetType(kmpi, KSPMINRES);
-    KSPGetPC(kmpi, &pmpi); PCSetType(pmpi, PCJACOBI); PCJacobiSetFixDiagonal(pmpi, PETSC_TRUE);
-    KSPSetTolerances(kmpi, 1e-6, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
-    KSPSolve(kmpi, bmpi, xmpi);
-    PetscInt its; KSPGetIterationNumber(kmpi, &its);
+    KSPSetInitialGuessNonzero(d.kmpi, warm_start ? PETSC_TRUE : PETSC_FALSE);
+    if (!warm_start) VecSet(d.xmpi, 0.0);
+    KSPSolve(d.kmpi, d.bmpi, d.xmpi);
 
-    // Gather the distributed solution back to a full replicated array.
-    std::vector<PetscScalar> x_full(nm6nc17, 0.0);
-    const PetscScalar *xa; VecGetArrayRead(xmpi, &xa);
-    std::vector<PetscScalar> um_loc(dloc), lm_loc(dloc);
-    for (PetscInt jl = 0; jl < dloc; jl++) { um_loc[jl] = xa[jl]; lm_loc[jl] = xa[dloc + jl]; }
-    std::vector<PetscScalar> uc(nc11, 0.0), lc(nc6, 0.0);
+    // Gather the distributed solution back to the full replicated X_out.
+    const PetscScalar *xa; VecGetArrayRead(d.xmpi, &xa);
+    std::vector<PetscScalar> um_loc(d.dloc), lm_loc(d.dloc), uc(nc11,0.0), lc(nc6,0.0);
+    for (PetscInt jl = 0; jl < d.dloc; jl++) { um_loc[jl] = xa[jl]; lm_loc[jl] = xa[d.dloc+jl]; }
     if (mpi_rank == 0) {
-        for (PetscInt k = 0; k < nc11; k++) uc[k] = xa[2*dloc + k];
-        for (PetscInt j = 0; j < nc6;  j++) lc[j] = xa[2*dloc + nc11 + j];
+        for (PetscInt k = 0; k < nc11; k++) uc[k] = xa[2*d.dloc + k];
+        for (PetscInt j = 0; j < nc6;  j++) lc[j] = xa[2*d.dloc + nc11 + j];
     }
-    VecRestoreArrayRead(xmpi, &xa);
+    VecRestoreArrayRead(d.xmpi, &xa);
     MPI_Bcast(uc.data(), nc11, MPIU_SCALAR, 0, PETSC_COMM_WORLD);
     MPI_Bcast(lc.data(), nc6,  MPIU_SCALAR, 0, PETSC_COMM_WORLD);
-    std::vector<int> cnts(mpi_size), disp(mpi_size);
-    for (int r = 0; r < mpi_size; r++) {
-        PetscInt rm0 = r * base + std::min((PetscInt)r, rem), rnm = base + (r < rem ? 1 : 0);
-        cnts[r] = 3 * rnm; disp[r] = 3 * rm0;
-    }
     std::vector<PetscScalar> um_full(nm3), lm_full(nm3);
-    MPI_Allgatherv(um_loc.data(), dloc, MPIU_SCALAR, um_full.data(), cnts.data(), disp.data(), MPIU_SCALAR, PETSC_COMM_WORLD);
-    MPI_Allgatherv(lm_loc.data(), dloc, MPIU_SCALAR, lm_full.data(), cnts.data(), disp.data(), MPIU_SCALAR, PETSC_COMM_WORLD);
-    for (PetscInt i = 0; i < nm3; i++) { x_full[i] = um_full[i]; x_full[nm3nc11 + i] = lm_full[i]; }
-    for (PetscInt k = 0; k < nc11; k++) x_full[nm3 + k] = uc[k];
-    for (PetscInt j = 0; j < nc6;  j++) x_full[nm3nc11 + nm3 + j] = lc[j];
+    MPI_Allgatherv(um_loc.data(), d.dloc, MPIU_SCALAR, um_full.data(), d.cnts.data(), d.disp.data(), MPIU_SCALAR, PETSC_COMM_WORLD);
+    MPI_Allgatherv(lm_loc.data(), d.dloc, MPIU_SCALAR, lm_full.data(), d.cnts.data(), d.disp.data(), MPIU_SCALAR, PETSC_COMM_WORLD);
 
-    // The integrator reads the velocity block X[nm3nc11 : nm6nc17]; report its norm (comparable
-    // across rank counts and to serial).
+    PetscScalar *xo; VecGetArray(X_out, &xo);
+    for (PetscInt i = 0; i < nm3;  i++) { xo[i] = um_full[i]; xo[nm3nc11 + i] = lm_full[i]; }
+    for (PetscInt k = 0; k < nc11; k++) xo[nm3 + k] = uc[k];
+    for (PetscInt j = 0; j < nc6;  j++) xo[nm3nc11 + nm3 + j] = lc[j];
+    VecRestoreArray(X_out, &xo);
+}
+
+// Isolated m2 check: solve the current rhs via the distributed path and (on 1 rank) compare to
+// the serial KSP. Reports the velocity-block norm, which must match across rank counts.
+bool PolyStokes::verify_distributed_solve()
+{
+    const PetscInt nm3nc11 = consts.nm3nc11, nm6nc17 = consts.nm6nc17;
+    solve_saddle_distributed(Xdet, false);
+    const PetscScalar *xa; VecGetArrayRead(Xdet, &xa);
+    std::vector<PetscScalar> x_mpi(xa, xa + nm6nc17);
     PetscReal vnorm = 0.0;
-    for (PetscInt j = nm3nc11; j < nm6nc17; j++) vnorm += PetscRealPart(x_full[j])*PetscRealPart(x_full[j]);
+    for (PetscInt j = nm3nc11; j < nm6nc17; j++) vnorm += PetscRealPart(xa[j])*PetscRealPart(xa[j]);
     vnorm = std::sqrt(vnorm);
+    VecRestoreArrayRead(Xdet, &xa);
 
-    // On a single rank, compare directly to the serial solve of the same rhs.
     PetscReal serdiff = -1.0;
-    if (mpi_size == 1) {
+    if (mpi_size == 1) {                 // serial reference via the real serial KSP (solve_saddle)
         solve_saddle(Xdet, false);
         const PetscScalar *xs; VecGetArrayRead(Xdet, &xs);
         serdiff = 0.0;
-        for (PetscInt i = 0; i < nm6nc17; i++) serdiff = std::max(serdiff, PetscAbsScalar(xs[i] - x_full[i]));
+        for (PetscInt i = 0; i < nm6nc17; i++) serdiff = std::max(serdiff, PetscAbsScalar(xs[i] - x_mpi[i]));
         VecRestoreArrayRead(Xdet, &xs);
     }
-
     if (mpi_rank == 0) {
-        std::cout << "[mpi-solve] ranks=" << mpi_size << " Nm=" << Nm << " its=" << its
+        std::cout << "[mpi-solve] ranks=" << mpi_size << " Nm=" << pinfo.Nm
                   << "  ||v_block|| = " << std::scientific << (double)vnorm;
         if (serdiff >= 0.0) std::cout << "   max|x_mpi - x_serial| = " << (double)serdiff;
         std::cout << std::endl;
     }
-
-    KSPDestroy(&kmpi); MatDestroy(&Ampi); VecDestroy(&bmpi); VecDestroy(&xmpi);
     return (mpi_size > 1) || (serdiff >= 0.0 && serdiff < 1e-6);
 }

@@ -132,6 +132,10 @@ private:
     void drift();
     void sample_drift_displacement();
     void solve_saddle(Vec X_out, bool warm_start=false);
+    // Distributed (MPI) saddle solve used by solve_saddle when mpi_size>1: reads the replicated
+    // rhs, solves the monomer-partitioned MINRES system, and writes the full solution into the
+    // replicated X_out. Persists its KSP/operator across steps. See src/matfree_A_mpi.cpp.
+    void solve_saddle_distributed(Vec X_out, bool warm_start);
     void sample_slip_vel();
     void solve_slip_vel();
     // Refresh Mcc_block = Mcc_base + adaptive eigenvalue-floor correction of the colloid

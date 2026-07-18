@@ -113,6 +113,12 @@ namespace arrays{
     extern Vec rhs;
     extern Vec W;
 
+    // Communicator for the replicated per-step vectors (rhs/W/X/Xd/Xdet). PETSC_COMM_WORLD in
+    // serial; set to PETSC_COMM_SELF in init() when running on >1 MPI rank, so each rank holds a
+    // full replicated copy (assembly stays replicated; only the distributed solve is collective).
+    // Must be assigned before alok_arrays().
+    extern MPI_Comm rep_comm;
+
     // extern rank2_array zm; // grand mobility matrix
 
     // Functions to initialize the global arrays

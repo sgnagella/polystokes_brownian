@@ -88,6 +88,8 @@ namespace arrays{
     Vec rhs;
     Vec W;
 
+    MPI_Comm rep_comm = PETSC_COMM_WORLD;   // overridden in init() when mpi_size > 1
+
     // Array for temporarily storing the contents of rfu without rotation terms
     rank2_array rtfu;
 
@@ -409,7 +411,7 @@ namespace arrays{
     }
 
     void initialize_rhs(PetscInt nm6nc17){
-        VecCreate(PETSC_COMM_WORLD, &rhs);
+        VecCreate(rep_comm, &rhs);
         VecSetSizes(rhs, PETSC_DECIDE, nm6nc17);
         VecSetFromOptions(rhs);
 
@@ -418,14 +420,14 @@ namespace arrays{
     }
 
     void initialize_W(PetscInt nm3nc11){
-        VecCreate(PETSC_COMM_WORLD, &W);
+        VecCreate(rep_comm, &W);
         VecSetSizes(W, PETSC_DECIDE, nm3nc11); 
         VecSetFromOptions(W);
         
     }
     void initialize_X(PetscInt nm6nc17){
         PetscErrorCode ierr;
-        VecCreate(PETSC_COMM_WORLD, &X);
+        VecCreate(rep_comm, &X);
         VecSetSizes(X, PETSC_DECIDE, nm6nc17);
         VecSetFromOptions(X);
         VecSet(X, 0.0);
@@ -435,7 +437,7 @@ namespace arrays{
 
     void initialize_Xd(PetscInt nm6nc17){
         PetscErrorCode ierr;
-        VecCreate(PETSC_COMM_WORLD, &Xd);
+        VecCreate(rep_comm, &Xd);
         VecSetSizes(Xd, PETSC_DECIDE, nm6nc17);
         VecSetFromOptions(Xd);
         VecSet(Xd, 0.0);
@@ -445,7 +447,7 @@ namespace arrays{
 
     void initialize_Xdet(PetscInt nm6nc17){
         PetscErrorCode ierr;
-        VecCreate(PETSC_COMM_WORLD, &Xdet);
+        VecCreate(rep_comm, &Xdet);
         VecSetSizes(Xdet, PETSC_DECIDE, nm6nc17);
         VecSetFromOptions(Xdet);
         VecSet(Xdet, 0.0);

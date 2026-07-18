@@ -10,6 +10,12 @@ void PolyStokes::solve_saddle(Vec X_out, bool warm_start){
     // warm_start: if true, use the current contents of X_out as the initial
     // guess; if false, KSP zeroes X_out and starts cold.
 
+    // Distributed (MPI) path: on >1 rank the serial KSP/operator/vectors are replicated-SELF
+    // and unused; the solve is done by the monomer-partitioned MINRES solver instead. It reads
+    // the replicated rhs and writes the full solution back into X_out (also SELF/replicated).
+    if (mpi_size > 1) { solve_saddle_distributed(X_out, warm_start); return; }
+
+
     // Declare the KSP solver
     PetscErrorCode ierr;
     KSPConvergedReason reason;

@@ -372,6 +372,10 @@ void PolyStokes::init(){
     // still replicated, every rank does identical work; I/O is guarded to rank 0 (run.cpp).
     MPI_Comm_rank(PETSC_COMM_WORLD, &mpi_rank);
     MPI_Comm_size(PETSC_COMM_WORLD, &mpi_size);
+    // On >1 rank, the per-step vectors are replicated on each rank (SELF): assembly runs
+    // redundantly and identically per rank, and only the saddle solve is distributed
+    // (solve_saddle dispatches to the MPI solver). Must be set before alok_arrays().
+    arrays::rep_comm = (mpi_size > 1) ? PETSC_COMM_SELF : PETSC_COMM_WORLD;
 
     // Opt-in profiling: start PETSc's default log handler so event timings accumulate
     // and PetscLogView() (end of run()) works. Off by default to keep production runs
