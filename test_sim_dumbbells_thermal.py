@@ -596,5 +596,5 @@ if __name__ == "__main__":
     # than the ~10-50 you get from a much shorter run. kbond=1 (soft bond) keeps
     # dt=0.001 stable without needing the stiff-bond dt=1e-5 regime.
     main(beta=beta, dt=dt, samplerate=samplerate, tmax=5.0, box=[10,10,10],
-         N_dumbbell=10000, kbond=1.0)
+         N_dumbbell=15000, kbond=1.0)
 
