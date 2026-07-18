@@ -125,6 +125,9 @@ private:
     // serially (replicated) and via the distributed monomer-partition + colloid MPI_Allreduce,
     // and report the max discrepancy. Env-triggered (POLYSTOKES_MPI_SELFTEST) from run().
     bool verify_distributed_matvec();
+    // Stage-2b m2: solve the CURRENT saddle system both serially and via a distributed
+    // MINRES over the monomer-partitioned operator, and report agreement. Env-triggered.
+    bool verify_distributed_solve();
     void mob();
     void drift();
     void sample_drift_displacement();

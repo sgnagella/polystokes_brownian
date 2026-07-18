@@ -95,8 +95,11 @@ void PolyStokes::run(){
         // Stage-2b milestone-1 check: with Mcm/Mcc populated, verify the distributed arrowhead
         // matvec against the serial one, then stop. Opt-in via POLYSTOKES_MPI_SELFTEST=1.
         if (i == 0 && std::getenv("POLYSTOKES_MPI_SELFTEST")) {
-            bool ok = verify_distributed_matvec();
-            if (mpi_rank == 0) std::cout << "[mpi-selftest] " << (ok ? "PASS" : "FAIL") << std::endl;
+            bool ok_mv = verify_distributed_matvec();   // m1: operator
+            bool ok_sv = verify_distributed_solve();    // m2: MINRES solve
+            if (mpi_rank == 0)
+                std::cout << "[mpi-selftest] matvec " << (ok_mv ? "PASS" : "FAIL")
+                          << " | solve " << (ok_sv ? "PASS" : "FAIL") << std::endl;
             sim_ptr = nullptr;
             return;
         }
