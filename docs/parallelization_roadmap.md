@@ -157,15 +157,33 @@ instead of manual index slices:
 
 </details>
 
-**2c — Distribute assembly, forces, enumeration** *(in progress — removes the replicated
-bridge so each rank works on only its local monomers; lifts the ~6.5% assembly Amdahl ceiling
-and the replicated-`Mcm` memory).* `set_vars()` builds only the **local
+**2c — Distribute assembly, forces, enumeration** *(compute ✅ done; memory/RNG remain).*
+The O(Nm) **compute** is now distributed and verified (serial byte-identical; N-rank matches
+serial trajectories to the MINRES tolerance on 1/2/4 ranks):
+- **`mob()`** fills only local `Mcm` columns; the Schur `M^cm(M^cm)^T` and slip-vel `M^cm·xi_m`
+  become local partials + `MPI_Allreduce` (nc11-sized). *(2c-1)*
+- **`check_dist()`** computes pd/vlist only for local monomer rows; `pair_interaction()` WCA is
+  then local via the Verlet list, and `RHS()` reduces the partial colloid force before adding
+  the replicated trap. *(2c-2)*
+- `bond_forces` stays replicated (writes only monomer slots — correct per-rank-local).
+
+**Remaining 2c (optional polish, not compute-critical):** `Mcm_block` still allocates the full
+`nc11 × nm3` per rank (only local columns filled) — switching to `nc11 × nm3_local` caps
+per-rank memory for *very* large Nm (touches the Schur/slip-vel matrix dims + the solver's
+column read). Per-rank RNG streams (then validation moves from trajectory-match to the
+`bond`/`trap` statistical oracles). `set_vars()` still builds the full replicated lists.
+
+<details><summary>Original 2c sketch</summary>
+
+`set_vars()` builds only the **local
 dumbbells'** pair/bond/chain lists (`src/init.cpp:202-324`); the `mob()` AB loop fills only local
 `Mcm_block` columns (`src/mob.cpp:983-1000`); `RHS()`/`bond_forces`/`trapping_forces` assemble the
 **local** force block (bonds intra-dumbbell → on-rank; trapping on the colloid-owning rank,
 `src/rhs.cpp:44-210`). **Broadcast** the colloid position/velocity each step (after `step()`) and
 **allreduce** any colloid force contribution. Draw the slip/drift noise **locally** per rank; the
 colloid Schur `syev` + slip stays replicated with the `M^cm·xi_m` allreduce from 2b (`src/slip_vel.cpp`).
+
+</details>
 
 **2d — General case (later, out of primary scope).** `mono_ev=True` monomer–monomer WCA needs a
 **spatial** decomposition with a per-step **ghost-monomer halo exchange** + **reverse force
