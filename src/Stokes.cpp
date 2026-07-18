@@ -8,19 +8,30 @@ using namespace arrays;
 // Initializes the PolyStokes class and defines various constants and parameters
 // for the calculations
 
-PolyStokes::PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI, bool chain_HI, bool fene, bool record_forces, bool tether, bool mono_ev, const std::vector<double>& box, double t)
-    : dt(dt), samplerate(samplerate), tmax(tmax), output_dir(output_dir), mm_HI(mm_HI), chain_HI(chain_HI), fene(fene), record_forces(record_forces), tether(tether), mono_ev(mono_ev), t(t)
+PolyStokes::PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI, bool chain_HI, bool fene, bool record_forces, bool tether, bool mono_ev, const std::vector<double>& box, double t, unsigned long seed, double restart)
+    : dt(dt), samplerate(samplerate), tmax(tmax), output_dir(output_dir), mm_HI(mm_HI), chain_HI(chain_HI), fene(fene), record_forces(record_forces), tether(tether), mono_ev(mono_ev), seed(seed), restart(restart), t(t)
 {
     std::cout << "using bond force fene: " << fene << std::endl;
     this->box.configure(box);   // empty => no PBC; {Lx,Ly,Lz} => periodic
     if (this->box.active()) {
         std::cout << "periodic box: [" << box[0] << ", " << box[1] << ", " << box[2] << "]" << std::endl;
     }
-    timeinfo.t = t;
+    // Restart: resume at t = restart and run to the absolute end time tmax. restart=0 reproduces
+    // the fresh-start values exactly (t=0, nsteps=floor(tmax/dt)).
+    timeinfo.t = restart;
     timeinfo.dt = dt;
     timeinfo.tmax = tmax;
     timeinfo.samplerate = samplerate;
-    timeinfo.nsteps = floor(tmax / dt);
+    timeinfo.nsteps = floor((tmax - restart) / dt);
+    if (timeinfo.nsteps < 0) {
+        std::cerr << "Warning: restart (" << restart << ") >= tmax (" << tmax
+                  << "); no steps to run." << std::endl;
+        timeinfo.nsteps = 0;
+    }
+    if (restart != 0.0) {
+        std::cout << "restart: resuming at t=" << restart << ", running "
+                  << timeinfo.nsteps << " steps to t=" << tmax << std::endl;
+    }
     init_coeffs();
 }
 
@@ -240,7 +251,7 @@ void PolyStokes::trap_info(double ktrap, double tstart, double trun, double weak
     }
 }
 
-void PolyStokes::initial_configuration(pybind11::array_t<double> init_x0)
+void PolyStokes::initial_configuration(pybind11::array_t<double> init_x0, pybind11::object init_q)
 {
     int ii, i4, ishift;
     int& n3 = consts.n3;
@@ -250,7 +261,7 @@ void PolyStokes::initial_configuration(pybind11::array_t<double> init_x0)
     PetscInt& nm3 = consts.nm3;
     auto buf = init_x0.request();
     double *ptr = static_cast<double*>(buf.ptr);
-    size_t n = buf.size; 
+    size_t n = buf.size;
 
     std::cout << "initializing arrays" << std::endl;
     initialize_x(n3);
@@ -260,26 +271,47 @@ void PolyStokes::initial_configuration(pybind11::array_t<double> init_x0)
     std::cout << "Copying initial positions" << std::endl;
     x.assign(ptr, ptr + n);
 
-    // Store the initial positions of the trapped colloids
-
-    std::cout << "Storing initial positions" << std::endl;
-    for(ii = 0; ii < nc3; ii++){
-        ishift = ii + nm3;
-        xpos0[ii] = x[ishift];
+    // Trap centers. On a fresh start (restart == 0) the colloids sit at their trap centers, so the
+    // loaded positions define them. On restart the colloid has drifted from its t=0 position, so we
+    // must NOT re-derive the trap center from the (moved) colloid -- the trap stays put. Every config
+    // in this codebase starts the colloid at the origin, and initialize_xpos0 already zeroed xpos0,
+    // so leaving it untouched keeps the trap at the origin.
+    if (restart == 0.0) {
+        std::cout << "Storing initial positions" << std::endl;
+        for(ii = 0; ii < nc3; ii++){
+            ishift = ii + nm3;
+            xpos0[ii] = x[ishift];
+        }
+    } else {
+        std::cout << "restart: trap center kept at origin (not re-derived from the drifted colloid)" << std::endl;
     }
 
-    std::cout << "Initial positions: " << xpos0[0] << " " << xpos0[1] << " " << xpos0[2] << std::endl;
+    std::cout << "Trap center: " << xpos0[0] << " " << xpos0[1] << " " << xpos0[2] << std::endl;
     trapinfo.r12 = sqrt( xpos0[0]*xpos0[0] + xpos0[1]*xpos0[1] + xpos0[2]*xpos0[2] );
     std::cout << "Initial radial distance: " << trapinfo.r12 << std::endl;
 
-    std::cout << "Initializing quaternion array" << std::endl;
-    // initialize the quaternion array
-    for(ii = 0; ii < Nc; ii++){
-        i4 = 4 * ii;
-        q[i4] = 1.0;
-        q[i4 + 1] = 0.0;
-        q[i4 + 2] = 0.0;
-        q[i4 + 3] = 0.0;
+    // Quaternions. On restart, restore the last saved orientation (init_q, Nc x 4 flattened) so the
+    // colloid orientation is continuous; on a fresh start (init_q is None) initialize to identity.
+    if (!init_q.is_none()) {
+        auto qbuf = init_q.cast<pybind11::array_t<double>>().request();
+        double *qptr = static_cast<double*>(qbuf.ptr);
+        if ((PetscInt)qbuf.size != nc4) {
+            std::cerr << "Warning: init_q size (" << qbuf.size << ") != Nc*4 (" << nc4
+                      << "); falling back to identity quaternions." << std::endl;
+            for(ii = 0; ii < Nc; ii++){ i4 = 4*ii; q[i4]=1.0; q[i4+1]=0.0; q[i4+2]=0.0; q[i4+3]=0.0; }
+        } else {
+            std::cout << "restart: restoring " << Nc << " quaternion(s) from init_q" << std::endl;
+            for(ii = 0; ii < nc4; ii++){ q[ii] = qptr[ii]; }
+        }
+    } else {
+        std::cout << "Initializing quaternion array (identity)" << std::endl;
+        for(ii = 0; ii < Nc; ii++){
+            i4 = 4 * ii;
+            q[i4] = 1.0;
+            q[i4 + 1] = 0.0;
+            q[i4 + 2] = 0.0;
+            q[i4 + 3] = 0.0;
+        }
     }
 
 }

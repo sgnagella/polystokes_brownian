@@ -39,9 +39,11 @@ struct NegEigStats {
 
 class PolyStokes {
 public:
-    PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI=true, bool chain_HI=false, bool fene=true, bool record_forces=false, bool tether=false, bool mono_ev=false, const std::vector<double>& box=std::vector<double>(), double t=0.0);
+    PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI=true, bool chain_HI=false, bool fene=true, bool record_forces=false, bool tether=false, bool mono_ev=false, const std::vector<double>& box=std::vector<double>(), double t=0.0, unsigned long seed=12345, double restart=0.0);
     ~PolyStokes();
-    void initial_configuration(pybind11::array_t<double> init_x0);
+    // init_q: optional (Nc x 4) quaternion configuration to restore on restart; if None,
+    // quaternions are initialized to identity (fresh start).
+    void initial_configuration(pybind11::array_t<double> init_x0, pybind11::object init_q=pybind11::none());
     void particle_info(double kT, double epsilon, int Np, int Nc, int Nm, int Npoly, int Nmono_per_chain, double beta, double kbond, double r0, double Lmax, double tau);
     void trap_info(double ktrap, double tstart, double trun, double weaken_trap=-1);
     // Toggle the per-event [schur]/[schur/lanczos] negative-eigenvalue warning prints. Default
@@ -63,6 +65,12 @@ private:
     bool tether; // whether to bond each chain's inner monomer to a host colloid (colloidal brush)
     bool mono_ev; // whether to apply monomer-monomer excluded-volume (WCA) interactions
     Box box;     // periodic box (inactive unless configured with 3 lengths)
+
+    // Restart support. restart is the resume time (0 => fresh start from t=0); seed is the base
+    // noise-RNG seed. On restart the effective seed is offset by the elapsed step count so the
+    // resumed segment draws an independent-but-reproducible stream (see init()).
+    unsigned long seed = 12345;
+    double restart = 0.0;
 
     Consts consts;
     Coeffs coeffs;
@@ -133,7 +141,7 @@ private:
     void init_coeffs();
     void set_consts();
     void init();
-    void init_random(unsigned int seed);
+    void init_random(unsigned long seed);
     void init_square_root_solver();
     void init_solver();
     void check_dist();

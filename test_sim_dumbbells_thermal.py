@@ -199,6 +199,21 @@ def read_trajectory(config_dir):
     return times, np.array(frames)
 
 
+def read_quaternions(config_dir):
+    """Read quats_<t>_.txt frames (one colloid quaternion [w,x,y,z] per line), sorted by time.
+    Returns (times, quats) with quats shape (nframes, Nc, 4). Mirrors read_trajectory; used to
+    restore colloid orientation on restart (pass quats[-1] to initial_configuration's init_q)."""
+    files = [f for f in os.listdir(config_dir)
+             if f.startswith('quats_') and f.endswith('.txt')]
+    files.sort(key=lambda x: float(x.split('_')[1]))
+    times = np.array([float(f.split('_')[1]) for f in files])
+    frames = []
+    for f in files:
+        with open(os.path.join(config_dir, f)) as fh:
+            frames.append([[float(v) for v in line.split()] for line in fh])
+    return times, np.array(frames)
+
+
 def equilibrium_length_stats(kbond, r0, kT):
     """Theoretical equilibrium bond-LENGTH distribution P(r) ~ r^2 exp(-V/kT),
     V = 1/2 kbond (r-r0)^2 (the r^2 is the 3D spherical-shell Jacobian).
@@ -439,7 +454,7 @@ def trap_statistics(times, traj, N_trapped, ktrap, kT=1.0, box=None,
 # Main
 # ----------------------------------------------------------------------------
 def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
-         N_dumbbell=6000, kbond=1.0):
+         N_dumbbell=6000, kbond=1.0, seed=12345):
     if samplerate is None:
         samplerate = int(1 / dt)               # sample every 1/dt timesteps
 
@@ -478,11 +493,17 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
             shutil.rmtree(data_config_dir)
         os.makedirs(data_config_dir, exist_ok=True)
 
+        # Persist everything restart_run() needs to reconstruct the engine (physical params,
+        # engine flags, dt/samplerate, and the base RNG seed). restart_run() reads this back.
         params = {
             "Np": Np, "beta": beta, "N_trapped": N_trapped,
             "N_poly": N_dumbbell, "N_mono": N_mono,
             "N_mono_total": N_mono_total, "bond_ids": bond_ids,
             "box": box, "kT": kT, "kbond": kbond, "r0": r0, "ktrap": ktrap,
+            "epsilon": epsilon, "Lmax": Lmax, "tau": tau, "dt": dt,
+            "samplerate": samplerate, "seed": seed, "weaken_trap": -1,
+            "mm_HI": False, "chain_HI": False, "fene": fene,
+            "record_forces": False, "tether": False, "mono_ev": False,
         }
         with open(os.path.join(data_save_dir, 'params.pkl'), 'wb') as f:
             pickle.dump(params, f)
@@ -496,6 +517,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
             tether=False,      # free dumbbells (NOT tethered to the colloid)
             mono_ev=False,      # monomer-monomer excluded volume (WCA) on
             box=box,           # None => unbounded; [Lx,Ly,Lz] => periodic
+            seed=seed,         # base noise-RNG seed (persisted for restart)
         )
         sim.particle_info(
             kT, epsilon, Np, N_trapped, N_mono_total,
@@ -514,6 +536,52 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
     # (For a histogram-vs-theory figure, run plot_trap_distribution.py afterward.)
     if ktrap > 0:
         trap_statistics(times, traj, N_trapped, ktrap, kT=kT, box=box, drop_transient=0.0)
+
+
+def restart_run(data_save_dir, tmax, analyze=True):
+    """Resume a simulation from its last saved frame, running on to absolute time `tmax`.
+
+    Reloads params.pkl (physical parameters, engine flags, dt/samplerate and the base RNG seed
+    written by main()), the last position frame (read_trajectory) and the last quaternion frame
+    (read_quaternions), then continues the run with restart=last_t. The engine keeps the trap at
+    the origin, restores the colloid orientation, and offsets the base seed by the elapsed step
+    count so the resumed segment draws an independent-but-reproducible noise stream. New frames are
+    keyed by time and appended to the same config dir.
+    """
+    data_config_dir = os.path.join(data_save_dir, 'config')
+    with open(os.path.join(data_save_dir, 'params.pkl'), 'rb') as f:
+        p = pickle.load(f)
+
+    times, frames = read_trajectory(data_config_dir)
+    qtimes, quats = read_quaternions(data_config_dir)
+    last_t = float(times[-1])
+    last_frame = frames[-1]
+    last_q = quats[-1]
+    if tmax <= last_t:
+        raise ValueError(f"tmax ({tmax}) must exceed the last saved time ({last_t})")
+    print(f"restart: resuming from t={last_t} -> tmax={tmax} (seed={p['seed']})")
+
+    N_dumbbell = p["N_poly"]
+    sim = PolyStokes.PolyStokes(
+        p["dt"], p["samplerate"], tmax, data_config_dir,
+        mm_HI=p["mm_HI"], chain_HI=p["chain_HI"], fene=p["fene"],
+        record_forces=p["record_forces"], tether=p["tether"], mono_ev=p["mono_ev"],
+        box=p["box"], seed=p["seed"], restart=last_t,
+    )
+    sim.particle_info(
+        p["kT"], p["epsilon"], p["Np"], p["N_trapped"], p["N_mono_total"],
+        N_dumbbell, p["N_mono"], p["beta"], p["kbond"], p["r0"], p["Lmax"], p["tau"],
+    )
+    sim.trap_info(p["ktrap"], 0.0, tmax, weaken_trap=p["weaken_trap"])
+    sim.initial_configuration(last_frame.flatten(), last_q.flatten())
+    sim.set_warn_neg_eig(False)
+    sim.run()
+
+    if analyze:
+        times, traj = read_trajectory(data_config_dir)
+        bond_statistics(times, traj, N_dumbbell, kbond=p["kbond"], r0=p["r0"], kT=p["kT"], box=p["box"])
+        if p["ktrap"] > 0:
+            trap_statistics(times, traj, p["N_trapped"], p["ktrap"], kT=p["kT"], box=p["box"], drop_transient=0.0)
 
 
 if __name__ == "__main__":

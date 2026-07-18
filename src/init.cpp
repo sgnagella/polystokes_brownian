@@ -102,7 +102,7 @@ void PolyStokes::init_square_root_solver(){
     return;
 }
 
-void PolyStokes::init_random(unsigned int seed){
+void PolyStokes::init_random(unsigned long seed){
     // Initialize random number generator with a seed
     rng.seed(seed);
     normal_dist = std::normal_distribution<double>(0.0, 1.0);
@@ -412,7 +412,14 @@ void PolyStokes::init(){
         // Same seed on every rank while the noise fills are still replicated (Stage-2a): all
         // ranks must draw the identical stream to stay in lockstep. Per-rank streams
         // (seed = 12345 + mpi_rank) move here once the noise draws become local (Stage-2c).
-        init_random(12345); // TODO: make seed an input parameter
+        //
+        // Restart: offset the user-supplied base seed by the number of steps already elapsed
+        // (restart/dt) so a resumed run draws an INDEPENDENT-but-reproducible noise stream rather
+        // than replaying the original run's noise. The offset is deterministic and identical on
+        // every rank, preserving the lockstep invariant above. With the defaults (seed=12345,
+        // restart=0) this is exactly init_random(12345) -- fresh runs are bitwise unchanged.
+        unsigned long eff_seed = seed + (unsigned long)std::llround(restart / dt);
+        init_random(eff_seed);
         std::cout << "Initializing square-root (MFN) solver..." << std::endl;
         init_square_root_solver();
     }
