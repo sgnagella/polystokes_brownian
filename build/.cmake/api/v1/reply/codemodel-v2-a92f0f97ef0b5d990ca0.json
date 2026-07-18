@@ -7,7 +7,7 @@
 				{
 					"build" : ".",
 					"hasInstallRule" : true,
-					"jsonFile" : "directory-.-Release-4647d919d914fb7851e1.json",
+					"jsonFile" : "directory-.-Release-6432ad2084b3d0b23d49.json",
 					"minimumCMakeVersion" : 
 					{
 						"string" : "3.15"
@@ -40,7 +40,7 @@
 				{
 					"directoryIndex" : 0,
 					"id" : "PolyStokes::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-PolyStokes-Release-d4f88b1dc765a53d4a4a.json",
+					"jsonFile" : "target-PolyStokes-Release-63628d59468119662fbc.json",
 					"name" : "PolyStokes",
 					"projectIndex" : 0
 				}

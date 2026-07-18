@@ -186,7 +186,12 @@ void PolyStokes::RHS(bool drift){
 
     std::fill(fint, fint + nm3nc3, 0.0);
     
-    pair_interaction(fint, consts, pinfo, dataStruct, mono_ev);
+    // Asymmetric-harmonic hard-sphere repulsion (k = 1/dt) in place of WCA: WCA is too soft to
+    // keep the colloid and monomers apart, leaving overlaps that make the mobility operator
+    // non-positive-definite, while the high-exponent LJ is too stiff and overshoots. This
+    // linear overlap-removal force is stable at fixed dt. pair_interaction() (WCA) and
+    // pair_interaction_highexp() are retained for reference/fallback.
+    pair_interaction_hs(fint, consts, pinfo, dataStruct, mono_ev, dt);
     // Monomer-monomer (AA) excluded volume via the cell list. Only in the mm_HI==false
     // path -- when mm_HI is on, AA pairs are enumerated into vlist and handled by
     // pair_interaction above. The cell list is (re)built once per step in run().

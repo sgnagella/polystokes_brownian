@@ -177,10 +177,6 @@
 			"path" : "/usr/share/cmake-3.22/Modules/CMakeParseImplicitLinkInfo.cmake"
 		},
 		{
-			"isGenerated" : true,
-			"path" : "build/CMakeFiles/FindOpenMP/OpenMPTryFlag.cpp"
-		},
-		{
 			"isCMake" : true,
 			"isExternal" : true,
 			"path" : "/usr/share/cmake-3.22/Modules/FindPackageHandleStandardArgs.cmake"
@@ -189,10 +185,6 @@
 			"isCMake" : true,
 			"isExternal" : true,
 			"path" : "/usr/share/cmake-3.22/Modules/FindPackageMessage.cmake"
-		},
-		{
-			"isGenerated" : true,
-			"path" : "build/CMakeFiles/FindOpenMP/OpenMPCheckVersion.cpp"
 		},
 		{
 			"isCMake" : true,

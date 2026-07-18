@@ -213,9 +213,9 @@ void set_vars(ParticleInfo& pinfo, Data& dataStruct, Consts& consts, bool tether
     }
 
     // Print the chain ids
-    for( ii = 0; ii < Nm; ii++){
-        std::cout << "chain_ids[" << ii << "]= " << chain_ids[ii] << std::endl;
-    }
+    // for( ii = 0; ii < Nm; ii++){
+    //     std::cout << "chain_ids[" << ii << "]= " << chain_ids[ii] << std::endl;
+    // }
 
     if( (kk+1) != Nm ){
         cout << "Number of chain ids does not match number of monomers " << std::endl;

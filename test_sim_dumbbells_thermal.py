@@ -456,11 +456,12 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
     # large WCA force every step, producing violent push-pull oscillation that no
     # integrator can absorb without addressing the force itself. 0.03 margin above
     # the cutoff keeps the bonded pair outside the WCA core entirely.
-    r0 = 2.0 ** (1.0 / 6.0) * (2.0 * beta) + 0.03   # bond rest length
+    # r0 = 2.0 ** (1.0 / 6.0) * (2.0 * beta) + 0.03   # bond rest length
+    r0 = 2.0** (1.0 / 6.0) * (2.0 * beta)   # bond rest length
     Lmax = 1.5*r0                             # unused (harmonic), kept for the API
     tau = 1000
     kT = 1.0
-    epsilon = 5.0                              # WCA excluded-volume energy scale
+    epsilon = 1.0                              # WCA excluded-volume energy scale
     ktrap = 1.0                                # harmonic trap holding the colloid at the origin
     fene = False
     # Monomer-monomer WCA cutoff (matches C++ rcuts[0] = 2^(1/6) * sigma[0],
@@ -502,6 +503,7 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
         )
         sim.trap_info(ktrap, 0.0, tmax, weaken_trap=-1)
         sim.initial_configuration(conf.flatten())
+        sim.set_warn_neg_eig(False)
         sim.run()
 
     # Analyze bond displacements (undriven dumbbells: no drift)
@@ -516,10 +518,10 @@ def main(beta=0.1, dt=0.001, tmax=25.0, samplerate=None, run=True, box=None,
 
 if __name__ == "__main__":
     dt = 0.00001
-    samplerate = 100    # sample every 0.1 time units (fine enough to resolve the
+    samplerate = 1000    # sample every 0.1 time units (fine enough to resolve the
                          # trap's ~2-time-unit relaxation time for the autocorrelation
                          # correction in trap_statistics)
-    beta = 0.001
+    beta = 0.01
     # 1 dumbbell + 1 trapped colloid, run long enough (tmax=500, i.e. ~250 trap
     # relaxation times at ktrap=1) to get solid trap statistics: ~100+ effective
     # independent samples per axis after the autocorrelation correction, rather

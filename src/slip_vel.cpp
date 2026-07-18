@@ -183,10 +183,20 @@ void PolyStokes::sync_mcc_schur_correction(){
 
     ierr = MatDenseRestoreArray(Smat, &Sarr); CHKERRV(ierr);
 
+    // Background stats: accumulate every stage (whether or not we print). w is ascending, so
+    // w[0] is this stage's most-negative eigenvalue.
+    neig_stats.corr_stages++;
     if (nneg > 0) {
-        PetscPrintf(PETSC_COMM_WORLD,
-            "[schur] corrected %D negative Schur eigenvalue(s), most negative = %.6e "
-            "(truncated far-field mobility not SPD)\n", (PetscInt)nneg, (double)PetscRealPart(w[0]));
+        double worst = (double)PetscRealPart(w[0]);
+        neig_stats.corr_events++;
+        neig_stats.corr_count += (long)nneg;
+        neig_stats.corr_sum_worst += worst;
+        if (worst < neig_stats.corr_worst) neig_stats.corr_worst = worst;
+        if (warn_neg_eig) {
+            PetscPrintf(PETSC_COMM_WORLD,
+                "[schur] corrected %ld negative Schur eigenvalue(s), most negative = %.6e "
+                "(truncated far-field mobility not SPD)\n", (long)nneg, worst);
+        }
     }
 
     return;
@@ -452,12 +462,35 @@ void PolyStokes::schur_sqrt_lanczos(Mat Bcm, Mat Ccc, double beta, Vec b, Vec ou
     ierr = VecMAXPY(out, m, g.data(), Q.data()); CHKERRV(ierr);
 
     if (nneg > 0) {
-        PetscPrintf(PETSC_COMM_WORLD,
-            "[schur/lanczos] floored %D negative projected eigenvalue(s)\n", (PetscInt)nneg);
+        neig_stats.lanc_events++;
+        neig_stats.lanc_count += (long)nneg;
+        if (warn_neg_eig) {
+            PetscPrintf(PETSC_COMM_WORLD,
+                "[schur/lanczos] floored %ld negative projected eigenvalue(s)\n", (long)nneg);
+        }
     }
 
     for (size_t i = 0; i < Q.size(); i++) { ierr = VecDestroy(&Q[i]); CHKERRV(ierr); }
     ierr = VecDestroy(&w);       CHKERRV(ierr);
     ierr = VecDestroy(&Sq);      CHKERRV(ierr);
     ierr = VecDestroy(&tmp_nm3); CHKERRV(ierr);
+}
+
+void PolyStokes::report_neg_eig_stats(){
+    // One-line-ish end-of-run summary of the negative-eigenvalue events collected in neig_stats
+    // (always accumulated, even when the per-event [schur] warnings are silenced for speed).
+    const NegEigStats& s = neig_stats;
+    double frac       = (s.corr_stages > 0) ? (double)s.corr_events / (double)s.corr_stages : 0.0;
+    double mean_worst = (s.corr_events > 0) ? s.corr_sum_worst / (double)s.corr_events        : 0.0;
+    PetscPrintf(PETSC_COMM_WORLD,
+        "[schur:stats] negative-eigenvalue summary: Schur correction ran on %ld stage(s); "
+        "%ld had negatives (%.1f%%), %ld eigenvalue(s) corrected total; most-negative over the run "
+        "= %.6e, mean per-event most-negative = %.6e.\n",
+        s.corr_stages, s.corr_events, 100.0 * frac,
+        s.corr_count, s.corr_worst, mean_worst);
+    if (s.lanc_events > 0) {
+        PetscPrintf(PETSC_COMM_WORLD,
+            "[schur:stats] Lanczos noise path floored negatives on %ld stage(s), %ld total.\n",
+            s.lanc_events, s.lanc_count);
+    }
 }

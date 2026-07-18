@@ -22,6 +22,21 @@ struct PetscEventScope {
     ~PetscEventScope() { PetscLogEventEnd(ev, 0, 0, 0, 0); }
 };
 
+// Background statistics on negative eigenvalues of the truncated colloid Schur complement,
+// accumulated every stage regardless of whether the per-event [schur] warning is printed.
+// The warnings fire O(thousands) of times per run, so their stderr I/O can dominate; turning
+// them off (set_warn_neg_eig(false)) speeds up the run while these counters preserve the
+// information. Reported once by report_neg_eig_stats() at the end of run().
+struct NegEigStats {
+    long   corr_stages    = 0;   // times the Schur correction ran (2 per step: predictor+corrector)
+    long   corr_events    = 0;   // stages with >=1 negative eigenvalue
+    long   corr_count     = 0;   // total negative eigenvalues corrected
+    double corr_worst     = 0.0; // most-negative eigenvalue seen over the whole run (<= 0)
+    double corr_sum_worst = 0.0; // sum over events of that event's most-negative (for a mean)
+    long   lanc_events    = 0;   // Lanczos-noise-path stages with >=1 floored negative
+    long   lanc_count     = 0;   // total floored negatives on the Lanczos path
+};
+
 class PolyStokes {
 public:
     PolyStokes(double dt, int samplerate, double tmax, const std::string& output_dir, bool mm_HI=true, bool chain_HI=false, bool fene=true, bool record_forces=false, bool tether=false, bool mono_ev=false, const std::vector<double>& box=std::vector<double>(), double t=0.0);
@@ -29,6 +44,10 @@ public:
     void initial_configuration(pybind11::array_t<double> init_x0);
     void particle_info(double kT, double epsilon, int Np, int Nc, int Nm, int Npoly, int Nmono_per_chain, double beta, double kbond, double r0, double Lmax, double tau);
     void trap_info(double ktrap, double tstart, double trun, double weaken_trap=-1);
+    // Toggle the per-event [schur]/[schur/lanczos] negative-eigenvalue warning prints. Default
+    // on (preserves prior behavior); pass false to suppress the prints for speed -- the stats
+    // are still collected and summarized at the end of run().
+    void set_warn_neg_eig(bool on) { warn_neg_eig = on; }
     void run();
 
 private:
@@ -64,6 +83,13 @@ private:
     Mat Smat = nullptr;
 
     bool petsc_finalized = false;
+
+    // Negative-eigenvalue diagnostics. warn_neg_eig gates the per-event prints (default on);
+    // neig_stats accumulates them either way (see NegEigStats) and report_neg_eig_stats()
+    // prints the summary at the end of run().
+    bool warn_neg_eig = true;
+    NegEigStats neig_stats;
+    void report_neg_eig_stats();
 
     // MPI rank/size on PETSC_COMM_WORLD (set in init()). Default 0/1 so the serial path is
     // unchanged. Stage-2 uses these to guard I/O to rank 0 and (later) to partition monomers.

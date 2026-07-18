@@ -165,6 +165,10 @@ void PolyStokes::run(){
     // (opt-in via POLYSTOKES_LOGVIEW=1; the default log handler is started in init()).
     if (std::getenv("POLYSTOKES_LOGVIEW")) { PetscLogView(PETSC_VIEWER_STDOUT_WORLD); }
 
+    // Summary of negative-eigenvalue events collected over the run (always printed, whether or
+    // not the per-event [schur] warnings were enabled).
+    report_neg_eig_stats();
+
     sim_ptr = nullptr;
 
     return;

@@ -84,7 +84,11 @@ PYBIND11_MODULE(PolyStokes, m) {
              py::arg("tstart"), 
              py::arg("trun"), 
              py::arg("weaken_trap")=-1, "Set the parameters for the traps")
-        .def("run", &PolyStokes::run, "Run the simulation");
+        .def("run", &PolyStokes::run, "Run the simulation")
+        .def("set_warn_neg_eig", &PolyStokes::set_warn_neg_eig, py::arg("on")=true,
+             "Toggle per-event [schur] negative-eigenvalue warning prints (default on). Pass "
+             "False to suppress them for speed; statistics are collected regardless and a "
+             "summary is printed at the end of run().");
 
     // Periodic box utility: same minimum-image / wrapping logic used by the
     // simulator, exposed so analysis scripts can reuse it consistently.
