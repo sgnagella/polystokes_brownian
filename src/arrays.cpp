@@ -43,7 +43,6 @@ namespace arrays{
 
     std::vector<std::vector<long double>> pd; 
     std::vector<std::vector<int>> bond_ids;
-    std::vector<std::vector<int>> bond_list; 
     std::vector<int> chain_ids;
     std::vector<std::vector<int>> id;
     std::vector<std::vector<int>> vlist;
@@ -205,10 +204,6 @@ namespace arrays{
     void initialize_vlist(int rows){
         vlist.resize(rows);
     };
-
-    void initialize_bond_list(int rows, int cols){
-        bond_list.resize(rows, std::vector<int>(cols, 0));
-    }
 
     void initialize_pair_types(int size){
         pair_types.resize(size, 0);

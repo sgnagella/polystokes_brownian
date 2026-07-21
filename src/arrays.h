@@ -60,7 +60,6 @@ namespace arrays{
     extern std::vector<std::vector<int>> bond_ids;
     extern std::vector<int> chain_ids;
     extern std::vector<std::vector<int>> vlist;
-    extern std::vector<std::vector<int>> bond_list;
     extern std::vector<int> pair_types;
     extern std::vector<std::vector<int>> id_AA; 
     extern std::vector<int> id_AB;
@@ -165,7 +164,6 @@ namespace arrays{
     void initialize_chainid(int size);
     void initialize_id(int rows, int cols);
     void initialize_vlist(int rows);
-    void initialize_bond_list(int rows, int cols);
     void initialize_pair_types(int size);
     void initialize_id_AA(int rows, int cols); 
     void initialize_id_AB(int size); 

@@ -136,7 +136,6 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts, bool mm_HI){
     initialize_id( consts.id_rows, pinfo.npair_stored);
     initialize_pair_types( pinfo.npair_stored );
     initialize_vlist(pinfo.Np-1);
-    initialize_bond_list(pinfo.Np, pinfo.nbonds);
     initialize_chainid(pinfo.Nm);
     // id_AA is read only by the mm_HI monomer-monomer HI loop; skip its (~3 GB at
     // Nm=12000) allocation when mm_HI is off.
@@ -321,13 +320,6 @@ void set_vars(ParticleInfo& pinfo, Data& dataStruct, Consts& consts, bool tether
         cout << "Number of bonds populated not equal to expected value" << endl;
     }
 
-
-    std::cout << "Setting up bond list..." << std::endl;
-    // Write the bond list to go from monomer to bond ids 
-    for( kk = 0; kk < nbonds; kk++ ){
-        ii = bond_ids[0][kk];
-        bond_list[ii][kk] = 1;
-    }
 
     for( ii = 0; ii < Nm; ii++ ){ radii[ii] = 0.1; } // TODO: use the global parameter 'beta' for now hard-coded
     for( ii = 0; ii < Nc; ii++ ){ radii[Nm + ii] = 1.0; }
