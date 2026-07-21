@@ -9,8 +9,7 @@ void PolyStokes::cleanup(){
     // MatDestroy(&ZMUF);
     // MatDestroy(&ZMUS);
     // MatDestroy(&ZMES);
-    // MatDestroy(&Pinv);
-    
+
     // Free the pointer
     // delete dataStruct;
     // dataStruct = nullptr;
@@ -19,6 +18,7 @@ void PolyStokes::cleanup(){
     // ierr = MatDestroy(&M); CHKERRV(ierr);
     if (A) { ierr = MatDestroy(&A); CHKERRV(ierr); }
     if (B) { ierr = MatDestroy(&B); CHKERRV(ierr); }
+    if (Pinv) { ierr = MatDestroy(&Pinv); CHKERRV(ierr); }  // matrix-free preconditioner (null under mm_HI)
     if (rhs) { ierr = VecDestroy(&rhs); CHKERRV(ierr); }
     if (X) { ierr = VecDestroy(&X); CHKERRV(ierr); }
     if (Xdet) { ierr = VecDestroy(&Xdet); CHKERRV(ierr); }

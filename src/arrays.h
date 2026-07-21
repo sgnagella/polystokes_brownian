@@ -5,6 +5,7 @@
 
 #include "multi_arrays.h"
 #include <petscmat.h>
+#include <petscpc.h>
 
 namespace arrays{
     // Declare arrays of doubles for position data
@@ -190,7 +191,15 @@ namespace arrays{
 
     // void initialize_ZMES();
 
-    // void initialize_Pinv(Petscint nm6nc17, PetscInt nm3nc11, PetscInt nm3nc6);
+    // SPD block-diagonal preconditioner Pinv = diag(D_M^-1, +D_UF) for the MINRES saddle solve,
+    // applied via a PCSHELL. initialize_Pinv allocates the (constant, diagonal) sparsity;
+    // fill_Pinv writes the values from the self-mobility diagonals once fill_self() has
+    // populated Mcc_base. See arrays.cpp for the block definitions.
+    void initialize_Pinv(PetscInt nm6nc17, PetscInt nm3nc11, PetscInt nm3nc6);
+    void fill_Pinv(PetscInt nm3, PetscInt nc11, PetscInt nm3nc6, PetscInt nm3nc11,
+                   PetscReal beta_inv);
+    // Generic PCSHELL apply: y = P x, where P is the Mat stored as the shell context.
+    PetscErrorCode PinvShellApply(PC pc, Vec x, Vec y);
 
     void initialize_M(PetscInt nm3nc11);
     void initialize_arrowhead(PetscInt nc11, PetscInt nm3);

@@ -37,7 +37,10 @@ void PolyStokes::init_solver(){
 
     // Initialize the solver
     std::cout << "..." << std::endl;
-    ierr = KSPCreate(PETSC_COMM_WORLD, &ksp); CHKERRV(ierr);
+    // Serial saddle KSP. Under MPI the distributed solve (solve_saddle_distributed) is used
+    // instead, but this KSP is still built; create it on rep_comm (SELF under MPI) so it matches
+    // the serial A shell's communicator and does not impose an invalid WORLD layout on >1 rank.
+    ierr = KSPCreate(rep_comm, &ksp); CHKERRV(ierr);
     ierr = KSPSetOperators(ksp, A, A); CHKERRV(ierr);
     // MINRES, not GMRES: the saddle operator A = [[Mob, B],[B^T, 0]] is SYMMETRIC indefinite
     // (Mob is symmetric -- M^mc = (M^cm)^T, M^cc symmetric -- and the constraint block is
@@ -51,12 +54,24 @@ void PolyStokes::init_solver(){
     ierr = KSPSetType(ksp, KSPMINRES); CHKERRV(ierr);
     ierr = KSPGetPC(ksp, &pc); CHKERRV(ierr);
 
-    // Jacobi preconditioner: diagonal scaling only, O(N) per apply -- no dense LU
-    // factorization (the O(N^3) FieldSplit-Schur cost). fix-diagonal replaces the
-    // zero diagonal entries of the saddle constraint block so 1/diag is finite.
+    // Preconditioner. Matrix-free path: apply the SPD block-diagonal Pinv = diag(D_M^-1, +D_UF)
+    // via a PCSHELL (y = Pinv x). This is the MINRES-compatible reduction of the LDU approximate
+    // inverse; vs the old Jacobi it puts the true velocity-mobility scale D_UF on the constraint
+    // block instead of a placeholder 1 (~2x fewer MINRES iterations). Pinv is allocated in
+    // alok_arrays and its values are filled once in run() after fill_self() (needs Mcc_base);
+    // the shell reads it at solve time. Dense (mm_HI) path keeps the original Jacobi
+    // (fix-diagonal replaces the zero constraint-block diagonal so 1/diag is finite).
     std::cout << "Preconditioner set" << std::endl;
-    ierr = PCSetType(pc, PCJACOBI); CHKERRV(ierr);
-    ierr = PCJacobiSetFixDiagonal(pc, PETSC_TRUE); CHKERRV(ierr);
+    if( !mm_HI ){
+        ierr = PCSetType(pc, PCSHELL); CHKERRV(ierr);
+        ierr = PCShellSetApply(pc, arrays::PinvShellApply); CHKERRV(ierr);
+        ierr = PCShellSetContext(pc, arrays::Pinv); CHKERRV(ierr);
+        ierr = PCShellSetName(pc, "Pinv (SPD block-diagonal)"); CHKERRV(ierr);
+    }
+    else {
+        ierr = PCSetType(pc, PCJACOBI); CHKERRV(ierr);
+        ierr = PCJacobiSetFixDiagonal(pc, PETSC_TRUE); CHKERRV(ierr);
+    }
 
     std::cout << "Set operators" << std::endl;
     ierr = KSPSetFromOptions(ksp); CHKERRV(ierr);
@@ -158,6 +173,12 @@ void alok_arrays(ParticleInfo& pinfo, Consts& consts, bool mm_HI){
     PetscInt mcm_cols = (_size > 1) ? consts.ndim * _nloc : consts.nm3;
     initialize_arrowhead(consts.nc11, mcm_cols);
     initialize_B(consts.nm3nc11, consts.nm3nc6);
+    // Approximate-inverse (LDU) preconditioner for the matrix-free saddle solve. Only the
+    // matrix-free path uses the PCSHELL(Pinv); the dense mm_HI path keeps PCJACOBI, so Pinv
+    // stays null there (see init_solver / cleanup guards).
+    if( !mm_HI ){
+        initialize_Pinv(consts.nm6nc17, consts.nm3nc11, consts.nm3nc6);
+    }
     std::cout << "A" << std::endl;
     if( mm_HI ){
         // Dense saddle matrix (monomer-monomer HI fills the full top-left block).

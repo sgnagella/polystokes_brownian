@@ -283,35 +283,62 @@ namespace arrays{
     //     MatSetUp(ZMES);
     // }
 
+    // Allocate the (constant) sparsity of the SPD block-diagonal preconditioner
+    //     Pinv = diag( D_M^-1 , +D_UF )
+    // (the MINRES-compatible reduction of the LDU approximate inverse: the indefinite
+    // off-diagonal-coupled form is dropped because MINRES requires an SPD preconditioner).
+    // It is purely diagonal -- one nonzero per row. Values are written by fill_Pinv once
+    // fill_self() has populated Mcc_base.
     void initialize_Pinv(PetscInt nm6nc17, PetscInt nm3nc11, PetscInt nm3nc6){
         PetscErrorCode ierr;
-        PetscInt i, ishift, nentries[nm6nc17];
+        std::vector<PetscInt> nentries(nm6nc17, 1);
+        ierr = MatCreateSeqAIJ(PETSC_COMM_SELF, nm6nc17, nm6nc17, 0, nentries.data(), &Pinv); CHKERRV(ierr);
+    }
 
-        for( i = 0; i < nm3nc11 ; i++){
-            nentries[i] = 1;
+    // Fill Pinv = diag(D_M^-1, +D_UF). D_M is the mobility self-diagonal (length nm3nc11):
+    // beta_inv on the nm3 monomer force DOFs, diag(Mcc_base) on the nc11 colloid FTS DOFs.
+    // D_UF is the translation-rotation self-mobility = the first nm3nc6 entries of D_M; it
+    // scales the constraint (velocity) block, replacing Jacobi's placeholder 1 with the true
+    // velocity-mobility scale. The force/FTS block gets D_M^-1 (same as Jacobi there).
+    void fill_Pinv(PetscInt nm3, PetscInt nc11, PetscInt nm3nc6, PetscInt nm3nc11,
+                   PetscReal beta_inv){
+        PetscErrorCode ierr;
+
+        // D_M (length nm3nc11): beta_inv on monomers, diag(Mcc_base) on the colloid.
+        std::vector<PetscScalar> DM(nm3nc11, 0.0);
+        for( PetscInt i = 0; i < nm3; i++) DM[i] = beta_inv;
+        {
+            Vec dc;
+            ierr = VecCreateSeq(PETSC_COMM_SELF, nc11, &dc); CHKERRV(ierr);
+            ierr = MatGetDiagonal(Mcc_base, dc); CHKERRV(ierr);
+            const PetscScalar *d;
+            ierr = VecGetArrayRead(dc, &d); CHKERRV(ierr);
+            for( PetscInt k = 0; k < nc11; k++) DM[nm3 + k] = d[k];
+            ierr = VecRestoreArrayRead(dc, &d); CHKERRV(ierr);
+            ierr = VecDestroy(&dc); CHKERRV(ierr);
         }
 
-        for( i = nm3nc11; i < nm6nc17; i++){
-            nentries[i] = 2; 
+        // Force/FTS block: D_M^-1.
+        for( PetscInt i = 0; i < nm3nc11; i++){
+            ierr = MatSetValue(Pinv, i, i, 1.0/DM[i], INSERT_VALUES); CHKERRV(ierr);
         }
-
-        ierr = MatCreateSeqAIJ(PETSC_COMM_SELF, nm6nc17, nm6nc17, 0, nentries, &Pinv); CHKERRV(ierr);
-        for( i = 0; i < nm3nc6; i++){
-            ishift = i + nm3nc11;
-            ierr = MatSetValue(Pinv, i, ishift, -1.0, INSERT_VALUES); CHKERRV(ierr);
-            ierr = MatSetValue(Pinv, ishift, i, -1.0, INSERT_VALUES); CHKERRV(ierr);
-            ierr = MatSetValue(Pinv, ishift, ishift, -1.0, INSERT_VALUES); CHKERRV(ierr);
-        }
-
-        for( i = nm3nc6; i < nm3nc11; i++){
-            ierr = MatSetValue(Pinv, i, i, 1.0, INSERT_VALUES); CHKERRV(ierr);
+        // Constraint (velocity) block: +D_UF_j = DM[j] for j < nm3nc6.
+        for( PetscInt j = 0; j < nm3nc6; j++){
+            ierr = MatSetValue(Pinv, j + nm3nc11, j + nm3nc11, DM[j], INSERT_VALUES); CHKERRV(ierr);
         }
 
         ierr = MatAssemblyBegin(Pinv, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
         ierr = MatAssemblyEnd(Pinv, MAT_FINAL_ASSEMBLY); CHKERRV(ierr);
-
         // MatView(Pinv, PETSC_VIEWER_STDOUT_WORLD);
+    }
 
+    // Generic PCSHELL apply: y = P x, where P is the Mat set as the shell context. Serial uses
+    // arrays::Pinv; the MPI path uses its own rank-local Pinv (matfree_A_mpi.cpp).
+    PetscErrorCode PinvShellApply(PC pc, Vec x, Vec y){
+        Mat P;
+        PetscErrorCode ierr = PCShellGetContext(pc, (void**)&P); CHKERRQ(ierr);
+        ierr = MatMult(P, x, y); CHKERRQ(ierr);
+        return 0;
     }
 
     void initialize_M(PetscInt nm3nc11){

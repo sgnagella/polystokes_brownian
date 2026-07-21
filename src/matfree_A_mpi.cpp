@@ -253,6 +253,7 @@ struct DistSolver {
     DistCtx ctx;
     std::vector<PetscScalar> Mcc_copy;
     Mat Ampi = nullptr; Vec bmpi = nullptr, xmpi = nullptr; KSP kmpi = nullptr;
+    Mat Pinv = nullptr;                   // rank-local approximate-inverse preconditioner
     PetscInt base = 0, rem = 0, m0 = 0, nm_loc = 0, d0 = 0, dloc = 0, local_size = 0;
     std::vector<int> cnts, disp;
 };
@@ -291,8 +292,55 @@ void PolyStokes::solve_saddle_distributed(Vec X_out, bool warm_start)
         KSPCreate(PETSC_COMM_WORLD, &d.kmpi);
         KSPSetOperators(d.kmpi, d.Ampi, d.Ampi);
         KSPSetType(d.kmpi, KSPMINRES);
-        PC pc; KSPGetPC(d.kmpi, &pc); PCSetType(pc, PCJACOBI); PCJacobiSetFixDiagonal(pc, PETSC_TRUE);
         KSPSetTolerances(d.kmpi, 1e-6, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT);
+        KSPSetFromOptions(d.kmpi);
+
+        // SPD block-diagonal preconditioner Pinv = diag(D_M^-1, +D_UF) on the distributed layout
+        // [ u_m_loc | l_m_loc | (rank0: u_c, l_c) ]. It is purely diagonal, so the parallel matrix
+        // has one local entry per row and no off-process columns. Built once from the self-mobility
+        // diagonals (beta_inv on monomers, diag(Mcc_base) on the colloid; valid after fill_self()).
+        // Force/FTS DOFs (u_m, u_c) get D_M^-1; velocity/constraint DOFs (l_m, l_c) get +D_UF.
+        {
+            std::vector<PetscScalar> mccdiag(nc11, 0.0);
+            {
+                Vec dc; VecCreateSeq(PETSC_COMM_SELF, nc11, &dc);
+                MatGetDiagonal(Mcc_base, dc);
+                const PetscScalar *dd; VecGetArrayRead(dc, &dd);
+                std::copy(dd, dd + nc11, mccdiag.begin());
+                VecRestoreArrayRead(dc, &dd); VecDestroy(&dc);
+            }
+
+            MatCreate(PETSC_COMM_WORLD, &d.Pinv);
+            MatSetSizes(d.Pinv, d.local_size, d.local_size, nm6nc17, nm6nc17);
+            MatSetType(d.Pinv, MATAIJ);
+            MatSeqAIJSetPreallocation(d.Pinv, 1, NULL);       // 1-rank case
+            MatMPIAIJSetPreallocation(d.Pinv, 1, NULL, 0, NULL);
+            MatSetUp(d.Pinv);
+            PetscInt R0, R1; MatGetOwnershipRange(d.Pinv, &R0, &R1);
+
+            // Local monomer block: u_m_loc rows [R0, R0+dloc) -> 1/beta_inv (D_M^-1);
+            // l_m_loc rows [R0+dloc, R0+2*dloc) -> +beta_inv (D_UF).
+            for (PetscInt jl = 0; jl < d.dloc; jl++) {
+                MatSetValue(d.Pinv, R0 + jl,          R0 + jl,          1.0/pinfo.beta_inv, INSERT_VALUES);
+                MatSetValue(d.Pinv, R0 + d.dloc + jl, R0 + d.dloc + jl, pinfo.beta_inv,     INSERT_VALUES);
+            }
+            // Colloid block on rank 0: u_c rows -> 1/diag(Mcc); l_c rows (velocity, k<nc6) -> +diag(Mcc).
+            if (mpi_rank == 0) {
+                PetscInt base_uc = R0 + 2*d.dloc, base_lc = base_uc + nc11;
+                for (PetscInt k = 0; k < nc11; k++)
+                    MatSetValue(d.Pinv, base_uc + k, base_uc + k, 1.0/mccdiag[k], INSERT_VALUES);
+                for (PetscInt k = 0; k < nc6;  k++)
+                    MatSetValue(d.Pinv, base_lc + k, base_lc + k, mccdiag[k], INSERT_VALUES);
+            }
+            MatAssemblyBegin(d.Pinv, MAT_FINAL_ASSEMBLY);
+            MatAssemblyEnd(d.Pinv, MAT_FINAL_ASSEMBLY);
+
+            PC pc; KSPGetPC(d.kmpi, &pc);
+            PCSetType(pc, PCSHELL);
+            PCShellSetApply(pc, arrays::PinvShellApply);
+            PCShellSetContext(pc, d.Pinv);
+            PCShellSetName(pc, "Pinv (SPD block-diagonal, distributed)");
+        }
         d.cnts.resize(mpi_size); d.disp.resize(mpi_size);
         for (int r = 0; r < mpi_size; r++) {
             PetscInt rm0 = r*d.base + std::min((PetscInt)r, d.rem), rnm = d.base + (r < d.rem ? 1 : 0);

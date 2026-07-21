@@ -139,7 +139,11 @@ void initialize_A_shell(PetscInt nm6nc17, PetscInt nm3nc11, PetscInt nm3nc6,
     VecCreateSeq(PETSC_COMM_SELF, nm3nc6,  &c->yl);
     VecCreateSeq(PETSC_COMM_SELF, nm3nc11, &c->btop);
 
-    MatCreateShell(PETSC_COMM_WORLD, nm6nc17, nm6nc17, nm6nc17, nm6nc17, (void*)c, &A);
+    // rep_comm is PETSC_COMM_WORLD in serial and PETSC_COMM_SELF under MPI (the distributed
+    // solve uses its own COMM_WORLD shell in matfree_A_mpi.cpp). Creating this serial arrowhead
+    // shell on WORLD with full local==global size is invalid on >1 rank (PetscSplitOwnership),
+    // so use rep_comm to get a valid per-rank SELF shell that the replicated serial path can use.
+    MatCreateShell(rep_comm, nm6nc17, nm6nc17, nm6nc17, nm6nc17, (void*)c, &A);
     MatShellSetOperation(A, MATOP_MULT,         (void(*)(void))ArrowheadMult);
     MatShellSetOperation(A, MATOP_GET_DIAGONAL, (void(*)(void))ArrowheadGetDiagonal);
     MatShellSetOperation(A, MATOP_DESTROY,      (void(*)(void))ArrowheadDestroy);

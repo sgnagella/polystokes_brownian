@@ -65,6 +65,13 @@ void PolyStokes::run(){
     // Fill saddle point matrix with the self-interactions
     fill_self();
 
+    // Fill the SPD block-diagonal preconditioner Pinv now that fill_self() has populated the
+    // colloid self-mobility (Mcc_base). Matrix-free (MINRES) path only.
+    if( !mm_HI ){
+        arrays::fill_Pinv(consts.nm3, consts.nc11, consts.nm3nc6, consts.nm3nc11,
+                          pinfo.beta_inv);
+    }
+
     // bool flag = true;
 
     for(int i = 0; i < timeinfo.nsteps; i++){
